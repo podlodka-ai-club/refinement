@@ -39,35 +39,35 @@ class Observability:
         with open(self.path, "a") as f:
             f.write(json.dumps(d, ensure_ascii=False) + "\n")
 
-    def recent(self, n: int = 20) -> list[dict]:
+    def _iter_events(self):
+        """Все события лога; битые строки JSONL пропускаются — одна битая
+        строка не должна валить improve-цикл после применения действий."""
         if not self.path.exists():
-            return []
-        events = []
-        with open(self.path) as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    events.append(json.loads(line))
-        return events[-n:]
-
-    def stats(self) -> dict:
-        if not self.path.exists():
-            return {"total_events": 0, "applied": 0, "skipped": 0, "by_action": {}}
-        total = 0
-        applied = 0
-        skipped = 0
-        by_action: dict[str, int] = {}
+            return
         with open(self.path) as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
-                e = json.loads(line)
-                total += 1
-                if e.get("applied"):
-                    applied += 1
-                else:
-                    skipped += 1
-                action = e.get("action", "unknown")
-                by_action[action] = by_action.get(action, 0) + 1
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+    def recent(self, n: int = 20) -> list[dict]:
+        return list(self._iter_events())[-n:]
+
+    def stats(self) -> dict:
+        total = 0
+        applied = 0
+        skipped = 0
+        by_action: dict[str, int] = {}
+        for e in self._iter_events():
+            total += 1
+            if e.get("applied"):
+                applied += 1
+            else:
+                skipped += 1
+            action = e.get("action", "unknown")
+            by_action[action] = by_action.get(action, 0) + 1
         return {"total_events": total, "applied": applied, "skipped": skipped, "by_action": by_action}

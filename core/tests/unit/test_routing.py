@@ -62,3 +62,17 @@ class TestGetRouter:
         r = get_router()
         assert isinstance(r, DefaultRouter)
         del os.environ["ROUTER_CLASS"]
+
+    def test_invalid_class_logs_to_stderr(self, capsys):
+        """Регрессия ревью: тихий откат на DefaultRouter прятал опечатку в
+        ROUTER_CLASS — деградация обязана быть видимой."""
+        import os
+        os.environ["ROUTER_CLASS"] = "nonexistent.module.NoSuchClass"
+        try:
+            r = get_router()
+            assert isinstance(r, DefaultRouter)
+            err = capsys.readouterr().err
+            assert "ROUTER_CLASS" in err
+            assert "DefaultRouter" in err
+        finally:
+            del os.environ["ROUTER_CLASS"]

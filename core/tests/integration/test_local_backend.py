@@ -115,3 +115,31 @@ class TestFindSimilar:
         be.store_fact(f)
         similar = be.find_similar(f, threshold=0.5)
         assert "Unique" not in [s.title for s in similar]
+
+
+class TestUpsertSemantics:
+    """Регрессии код-ревью: контракт UPSERT по natural key title."""
+
+    def test_conflict_returns_existing_id(self, tmpdir):
+        """FactRef.id на конфликте обязан ссылаться на реальную строку, а не на
+        свежесгенерированный uuid, которого нет в базе."""
+        be = LocalBackend(str(tmpdir / "test.db"))
+        f = StructuredFact(type="Reference", title="Same title", tags=["t"], status="verified", content_summary="x" * 20)
+        ref1 = be.store_fact(f)
+        ref2 = be.store_fact(StructuredFact(type="Reference", title="Same title", tags=["t"],
+                                            status="deprecated", content_summary="y" * 20))
+        assert ref1.id == ref2.id
+
+    def test_re_store_without_source_preserves_it(self, tmpdir):
+        """Re-store без source_file (deprecation/decay) не должен затирать
+        provenance NULL-ом — write-back терял привязку к .md."""
+        be = LocalBackend(str(tmpdir / "test.db"))
+        be.store_fact(StructuredFact(type="Reference", title="Fact with source", tags=["t"],
+                                     status="verified", content_summary="x" * 20,
+                                     source_file="kotlin.md", source_session="s1"))
+        be.store_fact(StructuredFact(type="Reference", title="Fact with source", tags=["t"],
+                                     status="deprecated", content_summary="x" * 20))
+
+        facts = be.query_facts(FactQuery(search="source"))
+        assert facts[0].source_file == "kotlin.md"
+        assert facts[0].source_session == "s1"

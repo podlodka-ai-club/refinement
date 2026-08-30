@@ -199,7 +199,7 @@ def run_time_lapse(sessions: list[DemoSession] | None = None, verbose: bool = Tr
                 type=fact.type, title=fact.title, tags=fact.tags,
                 status="verified", content_summary=fact.content_summary,
             )
-            ref = backend.store_fact(structured)
+            backend.store_fact(structured)
             new_facts.append(fact.title)
             all_stored.append(structured)
 
@@ -270,7 +270,7 @@ def run_demo(backend_trained=None, verbose: bool = True) -> DemoResult:
     if verbose:
         header("DEMO: Memory Curator — «до» (чистая память) vs «после» (обученная)")
         print(f"  Обученная память: {result.trained_facts_total} фактов в xmemory" if has_trained else "  Обученная память: НЕ ПОДКЛЮЧЕНА (только clean)")
-        print(f"  Extraction: keyword (демо, детерминированно)\n")
+        print("  Extraction: keyword (демо, детерминированно)\n")
 
     for session in TEST_SESSIONS:
         facts = _make_facts_from_session(session.text)
@@ -306,7 +306,7 @@ def run_demo(backend_trained=None, verbose: bool = True) -> DemoResult:
             print(f"\n── {session.name} ──")
             print(f"  Извлечено фактов: {len(facts)}")
 
-            print(f"  Clean (пустая память):")
+            print("  Clean (пустая память):")
             print(f"    Одобрено: {len(clean_result.approved)} {[f.title[:50]+'...' for f in clean_result.approved]}")
             print(f"    Отклонено: {len(clean_result.rejected)}")
 
@@ -376,7 +376,7 @@ def _print_summary_plain(result: DemoResult, has_trained: bool):
         print(f"  Дельта: {delta} фактов — обученный агент знает больше, не сохраняет дубликаты")
         if delta > 0:
             print(f"\n  Вывод: Обученный агент НЕ сохранил {delta} фактов, которые уже знает.")
-            print(f"  Чистый агент сохранил бы их как «новые» — это и есть накопление опыта.")
+            print("  Чистый агент сохранил бы их как «новые» — это и есть накопление опыта.")
     else:
         print("  (xmemory не подключён — запусти с MEMORY_BACKEND=xmemory)")
 
@@ -394,7 +394,7 @@ def run_opencode_demo(n_sessions: int = 3):
         print("  Не удалось извлечь сессии из opencode.db")
         return
 
-    print(f"  База: ~/.local/share/opencode/opencode.db")
+    print("  База: ~/.local/share/opencode/opencode.db")
     print(f"  Всего сессий в базе: 386 | Извлечено для демо: {len(sessions)}\n")
 
     backend = LocalBackend(":memory:")
@@ -447,7 +447,7 @@ def run_opencode_demo(n_sessions: int = 3):
         for s in snapshots:
             print("  %s | +%d -%d | память: %d" % (s["session"], s["new"], s["duplicates"], s["total_after"]))
     print(f"\n  Итого: {len(all_stored)} фактов из {len(sessions)} реальных сессий OpenCode.")
-    print(f"  Данные не синтетические — из твоей рабочей базы opencode.db.")
+    print("  Данные не синтетические — из твоей рабочей базы opencode.db.")
 
 
 def run_ingest_demo(learnings_dir: str | None = None):
@@ -469,7 +469,6 @@ def run_ingest_demo(learnings_dir: str | None = None):
         print(f"    query('{q}') → {len(results)} фактов")
 
     saved = ingest_directory(dir_path, backend, gk)
-    all_facts = backend.query_facts(FactQuery())
     print(f"\n  Проиндексировано: {saved} фактов из {dir_path}")
     print(f"  Файлов: {len(list(dir_path.rglob('*.md')))}")
 
@@ -480,7 +479,7 @@ def run_ingest_demo(learnings_dir: str | None = None):
         for r in results[:2]:
             print(f"      · {r.title[:70]}")
 
-    print(f"\n  Вывод: до индексации — 0 фактов по любому запросу.")
+    print("\n  Вывод: до индексации — 0 фактов по любому запросу.")
     print(f"  После индексации {saved} фактов из {len(list(dir_path.rglob('*.md')))} .md файлов — агент может отвечать.")
 
 

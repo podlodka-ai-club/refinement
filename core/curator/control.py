@@ -67,7 +67,7 @@ def cmd_status():
     if pid and _is_running(pid):
         print(f"  Worker: ✅ запущен (pid {pid})")
     else:
-        print(f"  Worker: ⛔ остановлен")
+        print("  Worker: ⛔ остановлен")
 
     backend = _make_backend()
     try:
@@ -193,7 +193,7 @@ def cmd_save(auto_yes: bool = False):
 
     _header("Curator Save — кандидаты от агента")
 
-    from curator.models import ProposedFact, StructuredFact, normalize_fact_type
+    from curator.models import ProposedFact, StructuredFact, normalize_fact_type, parse_tags
     proposed = []
     for i, c in enumerate(data, 1):
         title = str(c.get("title", "")).strip() if isinstance(c, dict) else ""
@@ -205,7 +205,7 @@ def cmd_save(auto_yes: bool = False):
             type=normalize_fact_type(str(c.get("type", "Reference"))),
             title=title,
             content_summary=summary,
-            tags=[str(t).strip() for t in (c.get("tags") or []) if str(t).strip()],
+            tags=parse_tags(c.get("tags")),
             evidence=str(c.get("evidence", "") or ""),
         ))
 
@@ -239,7 +239,7 @@ def cmd_save(auto_yes: bool = False):
             print(f"\n  Сохранить {len(result.approved)} фактов? [y/N]: ", end="")
             answer = input().strip().lower()
         if answer == "y":
-            from curator.routing import get_router
+            from curator.routing import get_router, route_fact_safe
             from curator.sync_engine import SyncEngine
             from curator.retrieval_feedback import RetrievalFeedback
             router = get_router()
@@ -251,13 +251,14 @@ def cmd_save(auto_yes: bool = False):
                 structured = StructuredFact(
                     type=fact.type, title=fact.title, tags=fact.tags,
                     status="verified", content_summary=fact.content_summary,
-                    source_file=router.route_fact(fact),
+                    source_file=route_fact_safe(router, fact),
                 )
                 backend.store_fact(structured)
                 try:
                     sync.write_fact_to_md(structured)
-                except Exception:
-                    pass
+                except Exception as e:
+                    # Факт в DB, но в .md его нет — молчать нельзя
+                    print(f"    ⚠ write-back в .md не удался для '{fact.title[:50]}': {e}")
                 fb.record_save(fact.title)
                 saved += 1
             print(f"  ✅ Сохранено: {saved} фактов")
@@ -330,6 +331,10 @@ def cmd_stop():
         return
     if not _is_running(pid):
         print(f"Процесс {pid} не существует. Удаляю pid-файл.")
+        PID_FILE.unlink(missing_ok=True)
+        return
+    if not _pid_is_curator_worker(pid):
+        print(f"Процесс {pid} не похож на curator-worker (pid переиспользован ОС?) — не убиваю, удаляю pid-файл.")
         PID_FILE.unlink(missing_ok=True)
         return
     os.kill(pid, signal.SIGTERM)
@@ -410,7 +415,7 @@ def cmd_improve():
             print(f"    ✅ {r.winner.title[:50]} ← {r.loser.title[:50]}")
             print(f"       {r.reason}")
     if report.events:
-        print(f"\n  Eval-решения:")
+        print("\n  Eval-решения:")
         for e in report.events[-5:]:
             status = "✅" if e.get("applied") else "⛔"
             print(f"    {e['action']}: {status}")
@@ -460,6 +465,29 @@ def _is_running(pid):
         return True
     except (ProcessLookupError, OSError):
         return False
+
+
+def _pid_is_curator_worker(pid: int) -> bool:
+    """Верификация перед kill: pid-файл мог протухнуть, ОС переиспользовала pid.
+
+    Матчим точные токены командной строки: `python -m curator.worker`
+    (как запускает cmd_start) и entrypoint `curator-worker`. Подстрочные
+    совпадения (`rg curator.worker`, `tail -f curator.worker.log`) — нет.
+    """
+    try:
+        out = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "command="],
+            capture_output=True, text=True, timeout=5,
+        )
+    except Exception:
+        return False
+    tokens = out.stdout.split()
+    for i, tok in enumerate(tokens):
+        if tok == "-m" and i + 1 < len(tokens) and tokens[i + 1] == "curator.worker":
+            return True
+        if tok == "curator-worker" or tok.endswith("/curator-worker"):
+            return True
+    return False
 
 
 def _read_events():

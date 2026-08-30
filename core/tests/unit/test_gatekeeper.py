@@ -89,3 +89,50 @@ class TestGatekeeperResult:
         fact, reason = result.rejected[0]
         assert isinstance(fact, ProposedFact)
         assert isinstance(reason, str)
+
+
+class TestMarkdownInjection:
+    """Регрессии код-ревью: вход приходит от LLM — title/summary без проверки
+    ломали marker-логику .md и создавали фейковые секции при реингесте."""
+
+    def test_rejects_multiline_title(self):
+        result = Gatekeeper().filter([_fact(title="Правило про JVM\n### подделка секции")])
+        assert len(result.rejected) == 1
+        assert "одной строкой" in result.rejected[0][1]
+
+    def test_rejects_carriage_return_title(self):
+        result = Gatekeeper().filter([_fact(title="Правило про JVM\r\nс переносом")])
+        assert len(result.rejected) == 1
+
+    def test_rejects_hash_leading_title(self):
+        result = Gatekeeper().filter([_fact(title="### Заголовок маскирующийся под секцию")])
+        assert len(result.rejected) == 1
+        assert "#" in result.rejected[0][1]
+
+    def test_rejects_stale_marker_trailing_title(self):
+        """Раунд-6: title с хвостовым [УСТАРЕЛО] неотличим от маркера
+        деприкации при rebuild из .md — молчаливая потеря."""
+        result = Gatekeeper().filter([_fact(title="Знание про пометки устаревших API [УСТАРЕЛО]")])
+        assert len(result.rejected) == 1
+        assert "УСТАРЕЛО" in result.rejected[0][1]
+
+    def test_rejects_short_after_flattening(self):
+        """Раунд-7: raw-длинный, но сплющенно-короткий summary (парсер .md
+        склеивает строки) терялся при rebuild — валидируем сплющенную форму."""
+        result = Gatekeeper().filter([_fact(summary="a\nb\nc\nd\ne\nf\ng\nh\ni\nj")])
+        assert len(result.rejected) == 1
+        assert "короткое" in result.rejected[0][1]
+
+    def test_rejects_heading_inside_summary(self):
+        result = Gatekeeper().filter([_fact(summary="Нормальное начало описания\n### Фейковая секция")])
+        assert len(result.rejected) == 1
+        assert "начинающиеся с #" in result.rejected[0][1]
+
+    def test_rejects_overlong_summary(self):
+        result = Gatekeeper().filter([_fact(summary="A" * 2001)])
+        assert len(result.rejected) == 1
+        assert "длинное" in result.rejected[0][1]
+
+    def test_multiline_summary_without_headings_passes(self):
+        result = Gatekeeper().filter([_fact(summary="Первая строка описания.\nВторая строка без заголовков.")])
+        assert len(result.approved) == 1

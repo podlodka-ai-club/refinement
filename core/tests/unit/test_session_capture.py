@@ -31,7 +31,7 @@ def memory_server(monkeypatch, tmp_path):
     be = LocalBackend(":memory:")
     monkeypatch.setattr(server_mod, "backend", be)
     monkeypatch.setattr(server_mod, "gatekeeper", Gatekeeper(be))
-    monkeypatch.setattr(server_mod, "feedback", RetrievalFeedback())
+    monkeypatch.setattr(server_mod, "feedback", RetrievalFeedback(storage_path=str(tmp_path / "usage.json")))
     monkeypatch.setattr(server_mod, "base_dir", tmp_path)
     monkeypatch.delenv("AUTO_MODE", raising=False)
     return be
@@ -104,3 +104,34 @@ class TestCandidatesGatekeeper:
         similar["title"] = "JvmInline value class внутри sealed interface вызывает бокс"
         out = server_mod._session_capture({"candidates": [similar]})
         assert "дубликат" in out.lower()
+
+
+class TestBatchTolerance:
+    """Регрессии код-ревью: один битый кандидат резал весь батч — валидные
+    обязаны сохраняться; auto_approve='false' (строка) не должна включать autosave."""
+
+    def test_one_broken_candidate_does_not_kill_batch(self, memory_server):
+        broken = dict(VALID_FACT)
+        broken["title"] = ""
+        out = server_mod._session_capture({"candidates": [broken, VALID_FACT_2], "auto_approve": True})
+        assert "нет title" in out
+        assert "Одобрено: 1" in out
+        assert "Авто-сохранено: 1" in out
+        assert len(memory_server.query_facts(FactQuery(search="Коммиты"))) == 1
+
+    def test_all_broken_reports_each_error(self, memory_server):
+        out = server_mod._session_capture({"candidates": [{"title": "", "content_summary": ""}, "not-a-dict"]})
+        assert "нет title" in out
+        assert "должен быть объектом" in out
+
+    def test_auto_approve_string_false_is_false(self, memory_server):
+        out = server_mod._session_capture({"candidates": [VALID_FACT], "auto_approve": "false"})
+        assert "Авто-сохранено" not in out
+        assert len(memory_server.query_facts(FactQuery())) == 0
+
+    def test_tags_as_comma_string(self, memory_server):
+        candidate = dict(VALID_FACT)
+        candidate["tags"] = "kotlin, jvm"
+        out = server_mod._session_capture({"candidates": [candidate]})
+        assert "Получено кандидатов: 1" in out
+        assert "Теги: kotlin, jvm" in out

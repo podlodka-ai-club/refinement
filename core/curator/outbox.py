@@ -8,6 +8,7 @@
 import json
 import os
 import sqlite3
+import threading
 from pathlib import Path
 
 from curator.models import StructuredFact
@@ -17,6 +18,9 @@ class Outbox:
     def __init__(self, path: str = "~/.curator/outbox.db"):
         self._path = Path(os.path.expanduser(path))
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        # Сериализация доступа к одному соединению: reachable из to_thread
+        # (xmemory-fallback при конкурентных MCP-вызовах)
+        self._lock = threading.Lock()
         self._conn = sqlite3.connect(self._path, check_same_thread=False)
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS outbox (
@@ -36,17 +40,19 @@ class Outbox:
             "status": fact.status, "content_summary": fact.content_summary,
             "source_file": fact.source_file, "source_session": fact.source_session,
         }
-        self._conn.execute(
-            "INSERT INTO outbox (title, fact_json) VALUES (?, ?) "
-            "ON CONFLICT(title) DO UPDATE SET fact_json=excluded.fact_json, synced_at=NULL",
-            (fact.title, json.dumps(payload, ensure_ascii=False)),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO outbox (title, fact_json) VALUES (?, ?) "
+                "ON CONFLICT(title) DO UPDATE SET fact_json=excluded.fact_json, synced_at=NULL",
+                (fact.title, json.dumps(payload, ensure_ascii=False)),
+            )
+            self._conn.commit()
 
     def pending(self) -> list[tuple[int, StructuredFact]]:
-        rows = self._conn.execute(
-            "SELECT id, fact_json FROM outbox WHERE synced_at IS NULL ORDER BY id"
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, fact_json FROM outbox WHERE synced_at IS NULL ORDER BY id"
+            ).fetchall()
         result = []
         for row_id, raw in rows:
             d = json.loads(raw)
@@ -59,19 +65,22 @@ class Outbox:
         return result
 
     def mark_synced(self, row_id: int) -> None:
-        self._conn.execute(
-            "UPDATE outbox SET synced_at = datetime('now') WHERE id = ?", (row_id,)
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                "UPDATE outbox SET synced_at = datetime('now') WHERE id = ?", (row_id,)
+            )
+            self._conn.commit()
 
     def fail(self, row_id: int) -> None:
-        self._conn.execute(
-            "UPDATE outbox SET attempts = attempts + 1 WHERE id = ?", (row_id,)
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                "UPDATE outbox SET attempts = attempts + 1 WHERE id = ?", (row_id,)
+            )
+            self._conn.commit()
 
     def count(self) -> int:
-        row = self._conn.execute(
-            "SELECT COUNT(*) FROM outbox WHERE synced_at IS NULL"
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM outbox WHERE synced_at IS NULL"
+            ).fetchone()
         return int(row[0])

@@ -36,7 +36,10 @@ class TestImprovePipeline:
         improve = ImproveLoop(be)
         report = improve.run()
 
-        assert report.stats["stale_found"] == 2
+        # deprecated уже покинул активный набор (забыт) — не пере-находится
+        # и не пере-сохраняется на каждом прогоне
+        assert report.stats["stale_found"] == 1
+        assert report.stats["total_facts"] == 2
 
     def test_all_duplicates(self, tmpdir):
         be = LocalBackend(str(tmpdir / "test.db"))

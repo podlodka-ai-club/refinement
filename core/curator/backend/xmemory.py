@@ -9,6 +9,8 @@
     in-memory fallback — только для тестов, персистентности нет.
 """
 
+import threading
+
 import httpx
 from curator.models import StructuredFact, FactQuery, FactRef, Relation, GraphData
 from curator.backend.local import LocalBackend
@@ -28,6 +30,9 @@ class XMemoryBackend:
         self._instance_id = instance_id
         self._client = None
         self._no_credentials = not (api_key and instance_id)
+        # Ленивая инициализация вызывается из to_thread — гонка создала бы
+        # дубли LocalBackend/Outbox/httpx.Client на одних файлах
+        self._init_lock = threading.Lock()
 
         # Персистентный fallback при сетевых ошибках (лениво).
         self._local_path = local_path
@@ -44,14 +49,16 @@ class XMemoryBackend:
 
     def _get_client(self) -> httpx.Client:
         if self._client is None and self._active:
-            self._client = httpx.Client(
-                base_url=self.BASE_URL,
-                headers={
-                    "Authorization": f"Bearer {self._api_key}",
-                    "Content-Type": "application/json",
-                },
-                timeout=60.0,
-            )
+            with self._init_lock:
+                if self._client is None:
+                    self._client = httpx.Client(
+                        base_url=self.BASE_URL,
+                        headers={
+                            "Authorization": f"Bearer {self._api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        timeout=60.0,
+                    )
         return self._client
 
     @staticmethod
@@ -65,9 +72,15 @@ class XMemoryBackend:
 
     def _ensure_offline(self):
         if self._offline is None:
-            from curator.outbox import Outbox
-            self._offline = LocalBackend(self._local_path)
-            self._outbox = Outbox(self._outbox_path)
+            with self._init_lock:
+                if self._offline is None:
+                    from curator.outbox import Outbox
+                    local = LocalBackend(self._local_path)
+                    outbox = Outbox(self._outbox_path)
+                    # _offline — sentinel fast-path'а: публикуем ПОСЛЕДНИМ,
+                    # чтобы конкурент не увидел его без готового _outbox
+                    self._outbox = outbox
+                    self._offline = local
 
     def _http_store(self, fact: StructuredFact) -> FactRef:
         text = self._fact_to_text(fact)

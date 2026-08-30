@@ -1,5 +1,6 @@
 import sqlite3
 import json
+import threading
 import uuid
 import os
 from curator.models import StructuredFact, FactQuery, FactRef, Relation, GraphData
@@ -11,13 +12,16 @@ class LocalBackend:
     def __init__(self, db_path: str = "~/.curator/knowledge.db"):
         db_path = os.path.expanduser(db_path)
         self._memory = False
+        # Сериализация доступа к одному соединению: MCP-хендлеры уходят в
+        # asyncio.to_thread и могут выполняться конкурентно
+        self._lock = threading.Lock()
 
         if db_path == ":memory:":
             self._memory = True
             self._conn = sqlite3.connect(":memory:", check_same_thread=False)
         else:
             os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
-            self._conn = sqlite3.connect(db_path)
+            self._conn = sqlite3.connect(db_path, check_same_thread=False)
             self._db_path = db_path
 
         self._init_db()
@@ -49,18 +53,25 @@ class LocalBackend:
 
     def store_fact(self, fact: StructuredFact) -> FactRef:
         fact_id = str(uuid.uuid4())[:8]
-        self._conn.execute(
-            "INSERT INTO facts (id, type, title, tags, status, content_summary, source_file, source_session) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(title) DO UPDATE SET "
-            "status=excluded.status, content_summary=excluded.content_summary, "
-            "tags=excluded.tags, source_file=excluded.source_file, "
-            "source_session=excluded.source_session, updated_at=datetime('now')",
-            (fact_id, fact.type, fact.title, json.dumps(fact.tags), fact.status,
-             fact.content_summary, fact.source_file, fact.source_session)
-        )
-        self._conn.commit()
-        return FactRef(id=fact_id, title=fact.title)
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO facts (id, type, title, tags, status, content_summary, source_file, source_session) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(title) DO UPDATE SET "
+                "status=excluded.status, content_summary=excluded.content_summary, "
+                "tags=excluded.tags, "
+                "source_file=COALESCE(excluded.source_file, facts.source_file), "
+                "source_session=COALESCE(excluded.source_session, facts.source_session), "
+                "updated_at=datetime('now')",
+                (fact_id, fact.type, fact.title, json.dumps(fact.tags), fact.status,
+                 fact.content_summary, fact.source_file, fact.source_session)
+            )
+            # На конфликте UPSERT оставляет старый id — возвращаем реальный id строки
+            row = self._conn.execute(
+                "SELECT id FROM facts WHERE title = ?", (fact.title,)
+            ).fetchone()
+            self._conn.commit()
+        return FactRef(id=row[0], title=fact.title)
 
     def query_facts(self, query: FactQuery) -> list[StructuredFact]:
         conditions = []
@@ -77,7 +88,8 @@ class LocalBackend:
 
         where = " AND ".join(conditions) if conditions else "1=1"
         sql = f"SELECT * FROM facts WHERE {where} ORDER BY created_at DESC"
-        rows = self._conn.execute(sql, params).fetchall()
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
 
         result = []
         for row in rows:
@@ -93,15 +105,17 @@ class LocalBackend:
         return result
 
     def get_relations(self, fact_id: str) -> list[Relation]:
-        rows = self._conn.execute(
-            "SELECT source_id, target_id, kind FROM relations WHERE source_id = ? OR target_id = ?",
-            (fact_id, fact_id)
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT source_id, target_id, kind FROM relations WHERE source_id = ? OR target_id = ?",
+                (fact_id, fact_id)
+            ).fetchall()
         return [Relation(source_id=r[0], target_id=r[1], kind=r[2]) for r in rows]
 
     def get_graph(self) -> GraphData:
-        facts = self._conn.execute("SELECT * FROM facts").fetchall()
-        edges = self._conn.execute("SELECT source_id, target_id, kind FROM relations").fetchall()
+        with self._lock:
+            facts = self._conn.execute("SELECT * FROM facts").fetchall()
+            edges = self._conn.execute("SELECT source_id, target_id, kind FROM relations").fetchall()
         return GraphData(
             nodes=[StructuredFact(
                 type=r[1], title=r[2], tags=json.loads(r[3]),
@@ -112,7 +126,8 @@ class LocalBackend:
 
     def health_check(self) -> bool:
         try:
-            self._conn.execute("SELECT 1")
+            with self._lock:
+                self._conn.execute("SELECT 1")
             return True
         except Exception:
             return False
@@ -136,8 +151,9 @@ class LocalBackend:
         return len(words_a & words_b) / len(words_a | words_b)
 
     def add_relation(self, source_id: str, target_id: str, kind: str) -> None:
-        self._conn.execute(
-            "INSERT OR IGNORE INTO relations (source_id, target_id, kind) VALUES (?, ?, ?)",
-            (source_id, target_id, kind)
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO relations (source_id, target_id, kind) VALUES (?, ?, ?)",
+                (source_id, target_id, kind)
+            )
+            self._conn.commit()

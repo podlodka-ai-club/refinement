@@ -14,6 +14,7 @@
 
 import os
 import json
+import asyncio
 from pathlib import Path
 
 from mcp.server import Server
@@ -23,7 +24,7 @@ from mcp.types import (
     ListToolsRequest, CallToolResult,
 )
 
-from curator.models import StructuredFact, ProposedFact, FactQuery
+from curator.models import StructuredFact, ProposedFact, FactQuery, parse_tags
 from curator.backend.interface import MemoryBackend
 from curator.backend.local import LocalBackend
 from pydantic import BaseModel, ConfigDict
@@ -50,6 +51,13 @@ _FACT_TYPES = ("Reference", "Style", "Tool", "Spec")
 
 def _fact_type(raw: str) -> str:
     return raw if raw in _FACT_TYPES else "Reference"
+
+
+def _as_bool(value) -> bool:
+    """LLM-клиенты присылают bool строкой: 'false' обязана быть ложной."""
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("true", "1", "yes")
 
 
 from curator.routing import get_router
@@ -88,7 +96,7 @@ async def handle_list_tools(ctx, request):
                     },
                     "auto_approve": {
                         "type": "boolean",
-                        "description": "Автоматически сохранять без подтверждения (только в AUTO_MODE)",
+                        "description": "Автоматически сохранять одобренных кандидатов без подтверждения (агент вызывает после показа preview)",
                         "default": False,
                     },
                 },
@@ -146,17 +154,17 @@ async def handle_call_tool(ctx, request):
         arguments = getattr(request, "arguments", {}) or {}
 
     if name == "curator_session_capture":
-        text = _session_capture(arguments)
+        text = await asyncio.to_thread(_session_capture, arguments)
     elif name == "curator_routes":
-        text = _routes()
+        text = await asyncio.to_thread(_routes)
     elif name == "curator_query":
-        text = _query(arguments)
+        text = await asyncio.to_thread(_query, arguments)
     elif name == "curator_status":
-        text = _status()
+        text = await asyncio.to_thread(_status)
     elif name == "curator_improve":
-        text = _improve()
+        text = await asyncio.to_thread(_improve)
     elif name == "curator_feedback":
-        text = _feedback()
+        text = await asyncio.to_thread(_feedback)
     else:
         text = f"Unknown tool: {name}"
 
@@ -172,7 +180,7 @@ app.add_request_handler("tools/call", _AnyParams, handle_call_tool)
 
 def _session_capture(args: dict) -> str:
     """Принять готовых кандидатов (извлёк агент), провалидировать, показать preview, сохранить."""
-    auto_approve = args.get("auto_approve", False) or os.getenv("AUTO_MODE", "false").lower() == "true"
+    auto_approve = _as_bool(args.get("auto_approve", False)) or os.getenv("AUTO_MODE", "false").lower() == "true"
 
     raw = args.get("candidates", [])
     if isinstance(raw, str):
@@ -201,20 +209,20 @@ def _session_capture(args: dict) -> str:
             type=_fact_type(str(c.get("type", "Reference"))),
             title=title,
             content_summary=summary,
-            tags=[str(t).strip() for t in (c.get("tags") or []) if str(t).strip()],
+            tags=parse_tags(c.get("tags")),
             evidence=str(c.get("evidence", "") or ""),
         ))
 
     from curator import server_log
     server_log.log("session_capture", stage="intake", received=len(raw), parsed=len(proposed))
 
+    error_lines = []
     if errors:
-        lines = ["Кандидаты с ошибками (не сохранены):"]
-        lines.extend(f"  {e}" for e in errors)
-        return "\n".join(lines)
+        error_lines.append("Кандидаты с ошибками (не сохранены):")
+        error_lines.extend(f"  {e}" for e in errors)
 
     if not proposed:
-        return "Кандидаты пусты."
+        return "\n".join(["Кандидаты пусты."] + error_lines)
 
     result = gatekeeper.filter(proposed)
     server_log.log("session_capture", stage="gatekeeper",
@@ -222,6 +230,8 @@ def _session_capture(args: dict) -> str:
                    rejected=len(result.rejected))
 
     lines = [f"Получено кандидатов: {len(proposed)}"]
+    if errors:
+        lines.extend(error_lines)
     lines.append(f"Отклонено: {len(result.rejected)}")
 
     if result.rejected:
@@ -241,6 +251,7 @@ def _session_capture(args: dict) -> str:
 
     if auto_approve and result.approved:
         from curator.sync_engine import SyncEngine
+        from curator.routing import route_fact_safe
         sync = SyncEngine(backend, base_dir)
         saved = []
         for fact in result.approved:
@@ -250,9 +261,15 @@ def _session_capture(args: dict) -> str:
                 tags=fact.tags,
                 status="verified",
                 content_summary=fact.content_summary,
-                source_file=router.route_fact(fact),
+                source_file=route_fact_safe(router, fact),
             )
-            backend.store_fact(structured)
+            try:
+                backend.store_fact(structured)
+            except Exception as e:
+                server_log.log("session_capture", stage="store_error",
+                               fact=fact.title, error=str(e)[:200])
+                lines.append(f"\n  ⚠ не сохранён '{fact.title[:50]}': {str(e)[:100]}")
+                continue
             try:
                 sync.write_fact_to_md(structured)
             except Exception as e:
