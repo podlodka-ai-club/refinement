@@ -143,3 +143,63 @@ class TestUpsertSemantics:
         facts = be.query_facts(FactQuery(search="source"))
         assert facts[0].source_file == "kotlin.md"
         assert facts[0].source_session == "s1"
+
+
+class TestLegacySchemaMigration:
+    """Dogfooding (живая БД): таблица, созданная старой схемой (title без
+    UNIQUE), ломала весь write-путь — ON CONFLICT(title) не находил
+    constraint, CREATE TABLE IF NOT EXISTS не апгрейдит таблицу.
+    _init_db самолечит уникальным индексом."""
+
+    def _legacy_db(self, db_path: str):
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        conn.execute("""CREATE TABLE facts (
+            id TEXT PRIMARY KEY, type TEXT NOT NULL, title TEXT NOT NULL,
+            tags TEXT NOT NULL, status TEXT NOT NULL, content_summary TEXT NOT NULL,
+            source_file TEXT, source_session TEXT,
+            created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))""")
+        conn.execute("""CREATE TABLE relations (
+            source_id TEXT NOT NULL, target_id TEXT NOT NULL, kind TEXT NOT NULL,
+            PRIMARY KEY (source_id, target_id, kind))""")
+        conn.commit()
+        return conn
+
+    def test_legacy_db_self_heals_and_upserts(self, tmpdir):
+        db_path = str(tmpdir / "legacy.db")
+        conn = self._legacy_db(db_path)
+        conn.close()
+
+        be = LocalBackend(db_path)
+        ref1 = be.store_fact(StructuredFact(type="Reference", title="Факт из легаси базы знаний", tags=["t"],
+                                            status="verified", content_summary="x" * 20))
+        ref2 = be.store_fact(StructuredFact(type="Reference", title="Факт из легаси базы знаний", tags=["t"],
+                                            status="deprecated", content_summary="y" * 20))
+        assert ref1.id == ref2.id, "upsert по title обязан заработать после самолечения"
+        assert len(be.query_facts(FactQuery())) == 1
+
+    def test_new_db_unaffected(self, tmpdir):
+        """Свежая БД (UNIQUE в CREATE TABLE) — индекс дублирует constraint,
+        поведение не меняется."""
+        be = LocalBackend(str(tmpdir / "fresh.db"))
+        be.store_fact(StructuredFact(type="Reference", title="Обычный факт свежей базы", tags=["t"],
+                                      status="verified", content_summary="x" * 20))
+        be.store_fact(StructuredFact(type="Reference", title="Обычный факт свежей базы", tags=["t"],
+                                      status="deprecated", content_summary="y" * 20))
+        assert len(be.query_facts(FactQuery())) == 1
+
+    def test_legacy_db_with_duplicates_still_connects(self, tmpdir):
+        """Дубликаты в легаси-данных не должны ронять init: база читается,
+        недоступность upsert для неё — прежнее поведение."""
+        db_path = str(tmpdir / "legacy_dupes.db")
+        conn = self._legacy_db(db_path)
+        for i in range(2):
+            conn.execute(
+                "INSERT INTO facts (id, type, title, tags, status, content_summary) VALUES (?, ?, ?, ?, ?, ?)",
+                (f"legacy-{i}", "Reference", "Дубликат из легаси базы", "[]", "verified", "x" * 20),
+            )
+        conn.commit()
+        conn.close()
+
+        be = LocalBackend(db_path)
+        assert len(be.query_facts(FactQuery(search="легаси"))) == 2
