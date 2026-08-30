@@ -20,7 +20,7 @@ from curator.models import StructuredFact, ProposedFact, FactQuery, normalize_fa
 from curator.backend.local import LocalBackend
 from curator.gatekeeper import Gatekeeper
 from curator.improve_loop import ImproveLoop
-from curator.routing import get_router
+from curator.routing import get_router, route_fact_safe
 from curator.sync_engine import SyncEngine
 
 DEMO_FACTS = [
@@ -124,7 +124,8 @@ def run_tour(backend: str = "local", keep: bool = False, verbose: bool = True) -
 
         _banner(out, f"MEMORY CURATOR — ТУР · бэкенд: {backend}")
         out(f"  Изолированная база: {tmp} (реальные данные не трогаются)")
-        out(f"  Флаг --keep сохранит файлы для ручного осмотра\n")
+        out("  Флаг --keep сохранит файлы для ручного осмотра")
+        out("")
 
         # ── ЭТАП 0: вход ─────────────────────────────────────────
         _banner(out, "ЭТАП 0/6 · ВХОД: агент харнеса извлек кандидатов из сессии")
@@ -164,7 +165,7 @@ def run_tour(backend: str = "local", keep: bool = False, verbose: bool = True) -
         for f in gate_result.approved:
             structured = StructuredFact(
                 type=f.type, title=f.title, tags=f.tags, status="verified",
-                content_summary=f.content_summary, source_file=router.route_fact(f),
+                content_summary=f.content_summary, source_file=route_fact_safe(router, f),
             )
             be.store_fact(structured)
             sync.write_fact_to_md(structured)
@@ -188,7 +189,7 @@ def run_tour(backend: str = "local", keep: bool = False, verbose: bool = True) -
         for f in wave2_result.approved:
             be.store_fact(StructuredFact(
                 type=f.type, title=f.title, tags=f.tags, status="verified",
-                content_summary=f.content_summary, source_file=router.route_fact(f),
+                content_summary=f.content_summary, source_file=route_fact_safe(router, f),
             ))
         result["approved"] += len(wave2_result.approved)
         result["rejected"] = len(gate_result.rejected) + len(wave2_result.rejected)
@@ -224,7 +225,7 @@ def run_tour(backend: str = "local", keep: bool = False, verbose: bool = True) -
         out(f"\n  Дубликатов найдено: {report.stats['duplicates_found']}")
         for f1, f2 in report.duplicates:
             out(f"    ↔ '{f1.title[:55]}' ~ '{f2.title[:55]}'")
-            out(f"      консолидация: проигравший помечен deprecated (eval gate одобрил)")
+            out("      консолидация: проигравший помечен deprecated (eval gate одобрил)")
         out(f"\n  Противоречий найдено: {report.stats['contradictions_found']}")
         for r in report.resolutions:
             out(f"    ✅ победил: '{r.winner.title[:60]}' ({r.reason})")

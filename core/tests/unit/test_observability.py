@@ -72,6 +72,29 @@ class TestObservability:
             o2 = Observability(path)
             assert len(o2.recent(5)) == 1
 
+    def test_recent_tolerates_broken_line(self):
+        """Регрессия ревью: битая строка JSONL валила improve.run() после
+        применения действий — теперь пропускается."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = f"{tmp}/events.jsonl"
+            with open(path, "w") as f:
+                f.write(json.dumps({"action": "ok", "applied": True}) + "\n")
+                f.write("{broken json\n")
+                f.write(json.dumps({"action": "ok2", "applied": False}) + "\n")
+            o = Observability(path)
+            assert len(o.recent(10)) == 2
+
+    def test_stats_tolerates_broken_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = f"{tmp}/events.jsonl"
+            with open(path, "w") as f:
+                f.write(json.dumps({"action": "ok", "applied": True}) + "\n")
+                f.write("{broken json\n")
+            o = Observability(path)
+            s = o.stats()
+            assert s["total_events"] == 1
+            assert s["applied"] == 1
+
     def test_log_contains_json_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = f"{tmp}/events.jsonl"

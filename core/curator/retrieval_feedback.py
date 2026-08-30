@@ -1,50 +1,91 @@
 """Обратная связь по использованию: отслеживает какие факты запрашиваются."""
 
+import fcntl
+import os
 import time
 import json
+from contextlib import contextmanager
 from pathlib import Path
 from collections import defaultdict
 
 
+def _default_entry() -> dict:
+    return {"count": 0, "last_access": 0.0}
+
+
 class RetrievalFeedback:
-    """Отслеживает usage фактов через query-запросы."""
+    """Отслеживает usage фактов через query-запросы.
+
+    Записывают несколько процессов (MCP-сервер, CLI, worker): каждая запись —
+    read-modify-write под advisory-файллоком (flock), счётчики параллельных
+    процессов не теряются. Запись атомарна (tmp с pid + os.replace). Чтения
+    всегда свежие — с диска. Телеметрия: сбой записи не валит вызвавшую тулзу.
+    """
 
     def __init__(self, storage_path: str = "~/.curator/usage.json"):
         self.storage_path = Path(storage_path).expanduser()
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self._counts: dict[str, dict] = defaultdict(lambda: {"count": 0, "last_access": 0.0})
-        self._load()
+        self._lock_path = self.storage_path.with_suffix(self.storage_path.suffix + ".lock")
 
-    def _load(self):
+    @contextmanager
+    def _flocked(self):
+        """Advisory-лок: сериализует read-modify-write между процессами."""
+        with open(self._lock_path, "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
+    def _read_disk(self) -> dict:
         if self.storage_path.exists():
             try:
-                self._counts = defaultdict(
-                    lambda: {"count": 0, "last_access": 0.0},
-                    json.loads(self.storage_path.read_text()),
-                )
+                raw = json.loads(self.storage_path.read_text())
+                if isinstance(raw, dict):
+                    # Битые записи (не dict, нечисловые поля) не должны
+                    # валить чтение телеметрии
+                    return {k: v for k, v in raw.items()
+                            if isinstance(k, str) and isinstance(v, dict)
+                            and isinstance(v.get("count"), (int, float))
+                            and isinstance(v.get("last_access"), (int, float))}
             except (json.JSONDecodeError, OSError):
                 pass
+        return {}
 
-    def _save(self):
-        self.storage_path.write_text(json.dumps(dict(self._counts), indent=2))
+    def _write_disk(self, data: dict) -> None:
+        tmp = self.storage_path.with_name(f"{self.storage_path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(data, indent=2))
+        os.replace(tmp, self.storage_path)
 
     def record_query(self, query_result_count: int, accessed_titles: list[str]):
         """Записать что N фактов были возвращены в ответ на запрос."""
-        for title in accessed_titles:
-            self._counts[title]["count"] += 1
-            self._counts[title]["last_access"] = time.time()
-        self._save()
+        try:
+            with self._flocked():
+                data = self._read_disk()
+                for title in accessed_titles:
+                    entry = data.setdefault(title, _default_entry())
+                    entry["count"] += 1
+                    entry["last_access"] = time.time()
+                self._write_disk(data)
+        except OSError:
+            pass
 
     def record_save(self, title: str):
         """Записать сохранение нового факта."""
-        if title not in self._counts:
-            self._counts[title] = {"count": 0, "last_access": time.time()}
-        self._save()
+        try:
+            with self._flocked():
+                data = self._read_disk()
+                if title not in data:
+                    data[title] = {**_default_entry(), "last_access": time.time()}
+                self._write_disk(data)
+        except OSError:
+            pass
 
     def get_stats(self, top_n: int = 10) -> list[dict]:
-        """Топ-N самых используемых фактов."""
+        """Топ-N самых используемых фактов (свежие данные с диска)."""
+        counts = defaultdict(_default_entry, self._read_disk())
         sorted_items = sorted(
-            self._counts.items(),
+            counts.items(),
             key=lambda x: x[1]["count"],
             reverse=True,
         )
@@ -56,9 +97,10 @@ class RetrievalFeedback:
 
     def get_unused(self, min_days: int = 90) -> list[str]:
         """Факты к которым не обращались > N дней (кандидаты на deprecation)."""
+        counts = defaultdict(_default_entry, self._read_disk())
         cutoff = time.time() - (min_days * 86400)
         return [
             title
-            for title, data in self._counts.items()
+            for title, data in counts.items()
             if data["last_access"] < cutoff
         ]

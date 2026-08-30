@@ -1,6 +1,9 @@
 import re
 from pathlib import Path
-from curator.models import ProposedFact, StructuredFact, FactQuery
+from curator.models import (
+    ProposedFact, StructuredFact, FactQuery,
+    META_LINE_PREFIXES, META_TYPE_PREFIX, META_TAGS_PREFIX,
+)
 from curator.backend.interface import MemoryBackend
 from curator.gatekeeper import Gatekeeper
 
@@ -65,15 +68,21 @@ def parse_md_file(filepath: Path) -> list[ProposedFact]:
         section = section.strip()
         if not section.startswith("### "):
             continue
-        if "[УСТАРЕЛО]" in section:
-            continue
 
         lines = section.split("\n")
-        title = lines[0].replace("### ", "").strip()
+        title_line = lines[0]
+        # Маркер устаревшего знания пишется только в заголовок секции
+        # (`### {title} [УСТАРЕЛО]`) — контент факта с этой подстрокой
+        # в тегах/описании легитимен и не должен дропать секцию
+        if title_line.endswith("[УСТАРЕЛО]"):
+            continue
+
+        # removeprefix (не replace): title может содержать '### ' внутри
+        title = title_line.removeprefix("### ").strip()
 
         body_lines = []
         for line in lines[1:]:
-            if line.startswith("*Тип:") or line.startswith("*Статус:") or line.startswith("*Теги:") or line.startswith("*Файл:"):
+            if line.startswith(META_LINE_PREFIXES):
                 break
             if line.startswith("#"):
                 break
@@ -88,8 +97,6 @@ def parse_md_file(filepath: Path) -> list[ProposedFact]:
             tags = list(file_tags)
 
         fact_type = _extract_type(section) or file_type
-
-        source = str(_relative_to(filepath))
 
         if len(title) >= 10:
             facts.append(ProposedFact(
@@ -107,8 +114,15 @@ def ingest_directory(dir_path: Path, backend: MemoryBackend, gatekeeper: Gatekee
     existing_titles = {f.title for f in backend.query_facts(FactQuery())}
 
     saved = 0
-    for md_file in dir_path.rglob("*.md"):
-        facts = parse_md_file(md_file)
+    # Сортировка = детерминированный порядок rebuild'а базы из .md
+    for md_file in sorted(dir_path.rglob("*.md")):
+        try:
+            facts = parse_md_file(md_file)
+        except (OSError, UnicodeDecodeError) as e:
+            # Один битый файл (не-UTF8, права) не должен валить
+            # индексацию всей директории
+            print(f"  ⚠ пропущен {md_file.name}: {e}")
+            continue
         if not facts:
             continue
         result = gatekeeper.filter(facts)
@@ -133,21 +147,28 @@ def ingest_directory(dir_path: Path, backend: MemoryBackend, gatekeeper: Gatekee
 
 
 def _extract_tags(section: str) -> list[str]:
-    match = re.search(r'\*Теги:\*\s*(.+)', section)
-    return [t.strip() for t in match.group(1).split(",")] if match else []
+    """Теги из метаданных секции — только строка-начала `*Тип:*` (рендер) или
+    собственная строка `*Теги:*` (рукописный формат). Mid-line вхождения в
+    теле секции игнорируются — это контент, не метаданные."""
+    for line in section.splitlines():
+        if line.startswith(META_TYPE_PREFIX):
+            m = re.search(r"\*Теги:\*\s*([^|]+)", line)
+            if m:
+                return [t.strip() for t in m.group(1).split(",") if t.strip()]
+        elif line.startswith(META_TAGS_PREFIX):
+            m = re.match(r"\*Теги:\*\s*(.+)", line)
+            if m:
+                return [t.strip() for t in m.group(1).split(",") if t.strip()]
+    return []
 
 
 def _extract_type(section: str) -> str | None:
-    match = re.search(r'\*Тип:\*\s*(.+)', section)
-    if match:
-        raw = match.group(1).strip()
-        if raw in ("Reference", "Style", "Tool", "Spec"):
-            return raw
+    """Тип факта из строки-меты. Рендер пишет `*Тип:* Tool | *Статус:* ...` —
+    берём только точное значение до разделителя, не всю строку."""
+    for line in section.splitlines():
+        if line.startswith(META_TYPE_PREFIX):
+            m = re.match(r"\*Тип:\*\s*(Reference|Style|Tool|Spec)", line)
+            if m:
+                return m.group(1)
+            return None
     return None
-
-
-def _relative_to(filepath: Path) -> Path:
-    parts = filepath.parts
-    if len(parts) >= 2:
-        return Path(*parts[-2:])
-    return filepath

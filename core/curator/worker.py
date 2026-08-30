@@ -43,7 +43,8 @@ def run_improve_cycle(backend, report_dir: Path) -> dict:
     report = improve.run()
 
     from curator.retrieval_feedback import RetrievalFeedback
-    from curator.models import FactQuery, StructuredFact
+    from curator.models import FactQuery
+    from dataclasses import replace
     fb = RetrievalFeedback()
 
     unused_30d = fb.get_unused(30)
@@ -57,19 +58,13 @@ def run_improve_cycle(backend, report_dir: Path) -> dict:
         for title in unused_90d:
             fact = fact_map.get(title)
             if fact and fact.status == "hypothesis":
-                backend.store_fact(StructuredFact(
-                    type=fact.type, title=fact.title, tags=fact.tags,
-                    status="deprecated", content_summary=fact.content_summary,
-                ))
+                backend.store_fact(replace(fact, status="deprecated"))
                 auto_deprecated.append({"title": title, "from": "hypothesis", "to": "deprecated", "reason": "unused > 90d"})
 
         for title in unused_30d:
             fact = fact_map.get(title)
             if fact and fact.status == "verified":
-                backend.store_fact(StructuredFact(
-                    type=fact.type, title=fact.title, tags=fact.tags,
-                    status="hypothesis", content_summary=fact.content_summary,
-                ))
+                backend.store_fact(replace(fact, status="hypothesis"))
                 auto_deprecated.append({"title": title, "from": "verified", "to": "hypothesis", "reason": "unused > 30d"})
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -126,7 +121,10 @@ def watch_directory(backend, watch_dir: Path):
 
     while True:
         for md_file in sorted(watch_dir.rglob("*.md")):
-            mtime = md_file.stat().st_mtime
+            try:
+                mtime = md_file.stat().st_mtime
+            except OSError:
+                continue  # файл удалён между rglob и stat
             if md_file in known_mtimes and known_mtimes[md_file] == mtime:
                 continue
             known_mtimes[md_file] = mtime

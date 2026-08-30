@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from curator.backend.interface import MemoryBackend
 from curator.models import StructuredFact, FactQuery
 
@@ -25,7 +25,11 @@ class ImproveLoop:
         self.backend = backend
 
     def run(self) -> ImproveReport:
-        all_facts = self.backend.query_facts(FactQuery())
+        # Активный набор: deprecated покинул память (забыт). Симуляция
+        # eval-гейта удаляет их из измеряемого списка — этот фильтр делает
+        # применение идентичным симуляции и исключает повторную обработку
+        # уже деприкнутых фактов на каждом прогоне.
+        all_facts = [f for f in self.backend.query_facts(FactQuery()) if f.status != "deprecated"]
         report = ImproveReport()
         report.duplicates = self._find_duplicates(all_facts)
         report.stale = self._find_stale(all_facts)
@@ -54,10 +58,7 @@ class ImproveLoop:
             ))
             if action.improved:
                 for _, dup in report.duplicates:
-                    self.backend.store_fact(StructuredFact(
-                        type=dup.type, title=dup.title, tags=dup.tags,
-                        status="deprecated", content_summary=dup.content_summary,
-                    ))
+                    self.backend.store_fact(replace(dup, status="deprecated"))
 
         if report.stale:
             action = runner.evaluate_deprecation(all_facts, report.stale)
@@ -71,19 +72,13 @@ class ImproveLoop:
             ))
             if action.improved:
                 for f in report.stale:
-                    self.backend.store_fact(StructuredFact(
-                        type=f.type, title=f.title, tags=f.tags,
-                        status="deprecated", content_summary=f.content_summary,
-                    ))
+                    self.backend.store_fact(replace(f, status="deprecated"))
 
         if report.contradictions:
             resolutions = self._resolve_contradictions(report.contradictions)
             report.resolutions = resolutions
             for r in resolutions:
-                self.backend.store_fact(StructuredFact(
-                    type=r.loser.type, title=r.loser.title, tags=r.loser.tags,
-                    status="deprecated", content_summary=r.loser.content_summary,
-                ))
+                self.backend.store_fact(replace(r.loser, status="deprecated"))
             obs.log(ObserveEvent(
                 action="contradiction_resolved",
                 applied=True,

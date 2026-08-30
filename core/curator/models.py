@@ -12,6 +12,24 @@ def normalize_fact_type(raw: str) -> FactType:
     return raw if raw in _FACT_TYPES else "Reference"
 
 
+def parse_tags(raw) -> list[str]:
+    """Теги кандидата от агента: массив или строка через запятую — один
+    канонический парсер для MCP-сервера и CLI."""
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        raw = raw.split(",")
+    return [str(t).strip() for t in raw if str(t).strip()]
+
+
+# Служебные префиксы строк рендера факта (SyncEngine._render_fact) и парсера
+# (analyzers/ingest). Инъекция их в content_summary подменяет метаданные
+# факта при реингесте — gatekeeper такие строки отклоняет.
+META_TYPE_PREFIX = "*Тип:"
+META_TAGS_PREFIX = "*Теги:"
+META_LINE_PREFIXES = (META_TYPE_PREFIX, META_TAGS_PREFIX, "*Статус:", "*Файл:")
+
+
 @dataclass
 class StructuredFact:
     """Валидированный факт, готовый к сохранению в память."""

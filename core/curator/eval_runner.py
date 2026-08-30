@@ -151,6 +151,9 @@ class EvalRunner:
         facts: list[StructuredFact],
         dups: list[tuple[StructuredFact, StructuredFact]],
     ) -> list[StructuredFact]:
+        """Симуляция: проигравшие дубликаты становятся deprecated и покидают
+        активный набор (ImproveLoop фильтрует deprecated) — в симуляции это
+        эквивалентно удалению из измеряемого списка."""
         to_remove = set()
         for _, f2 in dups:
             to_remove.add(f2.title)
@@ -161,5 +164,8 @@ class EvalRunner:
         facts: list[StructuredFact],
         stale: list[StructuredFact],
     ) -> list[StructuredFact]:
+        """Симуляция: устаревшие факты становятся deprecated и покидают
+        активный набор (ImproveLoop фильтрует deprecated) — в симуляции это
+        эквивалентно удалению из измеряемого списка."""
         stale_titles = {f.title for f in stale}
         return [f for f in facts if f.title not in stale_titles]

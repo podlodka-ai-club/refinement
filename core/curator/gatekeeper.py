@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from curator.models import ProposedFact, StructuredFact
+from curator.models import ProposedFact, StructuredFact, META_LINE_PREFIXES
 from curator.backend.interface import MemoryBackend
 
 
@@ -15,6 +15,7 @@ class Gatekeeper:
     MIN_TITLE_LENGTH = 10
     MAX_TITLE_LENGTH = 200
     MIN_SUMMARY_LENGTH = 20
+    MAX_SUMMARY_LENGTH = 2000
 
     NOISE_PATTERNS = [
         "поменять цвет", "сдвинуть на 2px", "добавить отступ",
@@ -40,8 +41,38 @@ class Gatekeeper:
             return "Слишком короткий заголовок"
         if len(fact.title) > self.MAX_TITLE_LENGTH:
             return "Слишком длинный заголовок"
-        if len(fact.content_summary) < self.MIN_SUMMARY_LENGTH:
+        # Многострочный title или # в его начале ломают маркер `### {title}`
+        # в .md (upsert/remove) — вход приходит от LLM, проверяем жёстко
+        if "\n" in fact.title or "\r" in fact.title:
+            return "Заголовок должен быть одной строкой"
+        if fact.title.lstrip().startswith("#"):
+            return "Заголовок не может начинаться с #"
+        # Рендер деприкации пишет `### {title} [УСТАРЕЛО]` — title с таким
+        # хвостом неотличим от маркера и терялся бы при rebuild из .md
+        if fact.title.rstrip().endswith("[УСТАРЕЛО]"):
+            return "Заголовок не может заканчиваться на [УСТАРЕЛО]"
+        # Длина меряется по СПЛЮЩЕННОЙ форме: парсер .md склеивает строки
+        # summary в одну — raw-длинный, но сплющенно-короткий факт прошёл бы
+        # capture и молча терялся при rebuild из .md
+        flattened = " ".join(line.strip() for line in fact.content_summary.splitlines() if line.strip())
+        if len(flattened) < self.MIN_SUMMARY_LENGTH:
             return "Слишком короткое описание"
+        if len(fact.content_summary) > self.MAX_SUMMARY_LENGTH:
+            return "Слишком длинное описание"
+        # Одиночный \r читается как перевод строки (universal newlines) —
+        # нормализация .md молча мутировала бы описание
+        if "\r" in fact.content_summary:
+            return "Описание не может содержать \\r"
+        # Инвариант формата .md: рендер факта (SyncEngine) никогда не содержит
+        # строк, начинающихся с # — иначе поиск секции при следующем апдейте
+        # обрежется на собственном контенте факта и апдейт превратится в дубль.
+        # Код в summary — только инлайн (`#include <vector>`) или с отступом
+        # (парсер и граница секции смотрят строго на начало строки)
+        if any(line.startswith("#") for line in fact.content_summary.splitlines()):
+            return "Описание не может содержать строки, начинающиеся с # (заголовок .md): код — только в инлайн-кавычках"
+        # Служебные мета-строки рендера подменяют тип/теги при реингесте .md
+        if any(line.startswith(META_LINE_PREFIXES) for line in fact.content_summary.splitlines()):
+            return "Описание не может содержать служебные строки (*Тип:*, *Теги:* и т.п.)"
 
         title_lower = fact.title.lower()
         for pattern in self.NOISE_PATTERNS:
@@ -50,6 +81,13 @@ class Gatekeeper:
 
         if not fact.tags:
             return "Нет тегов — знание невозможно категоризировать"
+
+        # Теги попадают в мета-строку рендера `*Теги:* a, b` и парсятся
+        # обратно по запятой/до '|': перевод строки ломал бы формат .md,
+        # '|' и ',' — раунд-трип тегов
+        for tag in fact.tags:
+            if any(ch in tag for ch in ("\n", "\r", "|", ",")):
+                return "Тег не может содержать перевод строки, '|' или запятую"
 
         if self.check_duplicates and self.backend:
             similar = self.backend.find_similar(
