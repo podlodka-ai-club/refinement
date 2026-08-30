@@ -49,6 +49,15 @@ class LocalBackend:
                 PRIMARY KEY (source_id, target_id, kind)
             )
         """)
+        # Легаси-БД: таблица могла быть создана старой схемой (title без
+        # UNIQUE) — CREATE TABLE IF NOT EXISTS её не апгрейдит, и upsert
+        # ON CONFLICT(title) падал. Самолечение уникальным индексом.
+        try:
+            self._conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_facts_title ON facts(title)")
+        except sqlite3.IntegrityError:
+            # Дубликаты в легаси-данных: индекс не строится, база читается
+            # как есть (upsert для такой базы остаётся недоступен)
+            pass
         self._conn.commit()
 
     def store_fact(self, fact: StructuredFact) -> FactRef:
