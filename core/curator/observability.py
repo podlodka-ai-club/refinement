@@ -1,0 +1,73 @@
+"""Observability: JSONL лог всех improve-действий.
+
+Каждая запись — одна строка JSON:
+  {"ts": "2026-09-01T10:00:00", "action": "consolidate", "facts": ["A", "B"],
+   "eval_before": 0.8, "eval_after": 0.9, "applied": true, "reason": ""}
+
+Позволяет ответить на вопрос «какой урок к какому изменению привёл».
+"""
+
+import json
+import time
+from pathlib import Path
+from dataclasses import dataclass, field, asdict
+
+
+@dataclass
+class ObserveEvent:
+    action: str
+    applied: bool
+    reason: str = ""
+    facts: list[str] = field(default_factory=list)
+    eval_before: float | None = None
+    eval_after: float | None = None
+    ts: str = ""
+
+    def __post_init__(self):
+        if not self.ts:
+            self.ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
+
+
+class Observability:
+    def __init__(self, path: str = "~/.curator/improve_events.jsonl"):
+        self.path = Path(path).expanduser()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def log(self, event: ObserveEvent):
+        d = asdict(event)
+        d["ts"] = event.ts or time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
+        with open(self.path, "a") as f:
+            f.write(json.dumps(d, ensure_ascii=False) + "\n")
+
+    def recent(self, n: int = 20) -> list[dict]:
+        if not self.path.exists():
+            return []
+        events = []
+        with open(self.path) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    events.append(json.loads(line))
+        return events[-n:]
+
+    def stats(self) -> dict:
+        if not self.path.exists():
+            return {"total_events": 0, "applied": 0, "skipped": 0, "by_action": {}}
+        total = 0
+        applied = 0
+        skipped = 0
+        by_action: dict[str, int] = {}
+        with open(self.path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                e = json.loads(line)
+                total += 1
+                if e.get("applied"):
+                    applied += 1
+                else:
+                    skipped += 1
+                action = e.get("action", "unknown")
+                by_action[action] = by_action.get(action, 0) + 1
+        return {"total_events": total, "applied": applied, "skipped": skipped, "by_action": by_action}

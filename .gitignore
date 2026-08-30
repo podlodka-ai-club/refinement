@@ -1,0 +1,29 @@
+# Python
+.venv/
+.venv_tmp/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+node_modules/
+
+# MacOS
+.DS_Store
+
+# Curator
+.curator/
+*.db
+
+# Reports (generated)
+reports/
+
+# Secrets
+.env
+*.env
+
+# IDE
+.idea/
+.vscode/

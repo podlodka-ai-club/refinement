@@ -1,0 +1,40 @@
+# Backlog (после пуша ядра)
+
+Порядок: ядро → тест → пуш → участники интегрируются → backlog.
+
+## Интеграция с участником 1 (карта)
+
+- [ ] **MapRouter-адаптер**: `route_fact()` читает карту участника 1 (watch_for/targets/captures/mode)
+      и возвращает `targets.path`. Заменяет DefaultRouter. Подключение: `ROUTER_CLASS=...`.
+- [ ] **Смерть extraction-rules.yaml**: карта — единственный конфиг (watch_for = фокус извлечения
+      для агента, targets = маршрутизация для бэкенда). До интеграции extraction-rules.yaml
+      читает агент/скилл, НЕ бэкенд.
+- [ ] Зафиксировать с участником 1: enum `mode` (update/append/create — update ложится на
+      `SyncEngine._upsert_fact_in_md`), словарь `captures` и его маппинг на FactType
+      (Reference/Style/Tool/Spec), валидация карты схемой, карта коммитится в репо.
+
+## Скилл /curator-save (финальная форма)
+
+- [ ] Превратить команду в скилл: читает карту → агент извлекает по watch_for →
+      self-review через curator_query → MCP candidates. Работает как save-knowledge,
+      но через наш механизм.
+- [ ] **save-knowledge → наш механизм**: сейчас независимый локальный запасной канал —
+      оставить до стабилизации куратора, потом подменить внутренности.
+
+## Харнесы
+
+- [ ] Claude Code: скилл-файл (копия opencode-инструкций) + .mcp.json с memory-curator.
+
+## Прочее
+
+- [ ] Склейка `session_reader` → `curator save --session N` (реальная сессия из opencode.db без харнеса).
+- [ ] Per-fact approve (выбор номеров) и редактирование кандидатов до сохранения.
+- [ ] Auto-trigger после сессии (opencode hooks) — «извлечение работает автоматом, я о нём не думаю».
+- [ ] Project-scoping фактов (поле project) и created_by в StructuredFact.
+- [ ] Двусторонняя синхронизация .md ↔ БД (UC5: ручная правка файла → переиндексация —
+      ingest уже умеет, нужен watcher-триггер).
+- [ ] CRDT/multi-master — только при реальной одновременной правке.
+
+## Окружение (не горит)
+
+- [ ] Обновить design/spec.md и decision-log.md под новую архитектуру (extract-слой = агент+скилл).
