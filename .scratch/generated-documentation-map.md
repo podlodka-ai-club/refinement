@@ -119,13 +119,13 @@ topics:
       реальными альтернативами, без которого будущее изменение может ошибочно
       отменить решение.
     targets:
-      - path: example/backend/docs/adr/*.md
+      - path: example/backend/docs/adr/[0-9][0-9][0-9][0-9]-*.md
         captures: [records, rules]
         mode: append
         instructions: >-
           Создавай следующий нумерованный ADR по правилам docs/adr/README.md;
-          принятый ADR не переписывай, а при замене создай новый и пометь старый
-          superseded.
+          этот append-маршрут не включает README. Принятый ADR не переписывай,
+          а при замене создай новый и пометь старый superseded.
       - path: example/backend/docs/adr/README.md
         captures: [rules]
         mode: update
