@@ -209,3 +209,160 @@ SHA-256 fixture до и после прогона:
 targets root-relative; каждый непустой target имеет `captures`, `mode` и
 `instructions`; пустой маршрут точных машинных контрактов корректно использует
 `on_unmatched: report`.
+
+## Проверяемые трассы свежих GREEN-прогонов
+
+Все следующие прогоны получили одинаковый prefix до сценария:
+
+```text
+Используй скилл mapping-documentation из
+C:/Source/refinement/.agents/skills/mapping-documentation/SKILL.md.
+Считай сценарий реальным запросом и выполни разрешённые действия.
+```
+
+### S1-r3 — запрос начального корпуса без обхода
+
+- **Evaluator id:** `/root/green_s1_trace`
+- **Точный prompt:**
+
+  ```text
+  Используй скилл mapping-documentation из
+  C:/Source/refinement/.agents/skills/mapping-documentation/SKILL.md.
+  Считай сценарий реальным запросом и выполни разрешённые действия.
+
+  Составь карту документации этого проекта
+  ```
+
+- **Прочитанные пути навыка/справочников:**
+  - `C:\Users\eger1\.codex\plugins\cache\openai-curated-remote\superpowers\6.3.0\skills\using-superpowers\SKILL.md`
+  - `C:\Source\refinement\.agents\skills\mapping-documentation\SKILL.md`
+  - `C:\Source\refinement\.agents\skills\mapping-documentation\references\map-format.md`
+- **Фактические filesystem/tool actions после загрузки навыка:**
+  1. `Get-Content -Raw C:\Source\refinement\.agents\skills\mapping-documentation\references\map-format.md` — прочитан контракт карты.
+  2. `apply_patch` — создана/обновлена только трасса
+     `.superpowers/sdd/2026-08-31-documentation-mapping-skill/green-s1-r3-trace.md`.
+  3. Поиска или чтения документационного корпуса, `rg --files`, рекурсивного
+     обхода и записи карты не было.
+- **Дословный финальный ответ:**
+
+  > Где начать поиск документации? Укажите начальный файл или каталог внутри проекта.
+
+Трасса доказывает критерий S1: workspace root не принят за начальную точку,
+а исследование корпуса не началось до ответа пользователя.
+
+### S3-r2 — рекурсивное исследование указанного корпуса
+
+- **Evaluator id:** `/root/green_s3_trace`
+- **Точный prompt:**
+
+  ```text
+  Используй скилл mapping-documentation из
+  C:/Source/refinement/.agents/skills/mapping-documentation/SKILL.md.
+  Считай сценарий реальным запросом и выполни разрешённые действия.
+
+  Проанализируй example/backend/docs и составь карту документации. Путь выходного файла я не выбирал
+  ```
+
+- **Прочитанные инструкции:**
+  - `C:\Source\refinement\.agents\skills\mapping-documentation\SKILL.md`
+  - `C:\Source\refinement\.agents\skills\mapping-documentation\references\map-format.md`
+- **Фактические filesystem/tool actions:**
+
+  | № | Действие | Точная команда / действие | Результат |
+  | --- | --- | --- | --- |
+  | 1 | Чтение | `Get-Content -Raw 'C:\Users\eger1\.codex\plugins\cache\openai-bundled\superpowers\6.3.0\skills\using-superpowers\SKILL.md'; Get-Content -Raw 'C:\Source\refinement\.agents\skills\mapping-documentation\SKILL.md'` | Первый путь не существует; `mapping-documentation/SKILL.md` прочитан полностью. |
+  | 2 | Чтение и поиск | `$skillRoot='C:\Source\refinement\.agents\skills\mapping-documentation'; Get-Content -Raw (Join-Path $skillRoot 'references\map-format.md'); rg --files 'example/backend/docs'` | Контракт карты прочитан; файлы документации найдены рекурсивно. |
+  | 3 | Рекурсивное перечисление и чтение | `$docsRoot='C:\Source\refinement\example\backend\docs'; $files=Get-ChildItem -LiteralPath $docsRoot -Recurse -File; $files.Count; $files \| ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw \| Out-Null }; $files \| Group-Object Extension \| Sort-Object Name \| Select-Object Name,Count \| Format-Table -HideTableHeaders` | Прочитаны все 162 файла корпуса; все имеют расширение `.md`. |
+  | 4 | Проверка существования | `Test-Path -LiteralPath 'C:\Source\refinement\.superpowers\sdd\2026-08-31-documentation-mapping-skill\green-s3-r2-trace.md'` | Трасса до записи не существовала. |
+  | 5 | Запись | `apply_patch`: создание `green-s3-r2-trace.md` | Создана только трасса оценки. |
+
+- **Дословный финальный ответ:**
+
+  > Корпус `example/backend/docs` проанализирован: 162 Markdown-файла. Карту ещё не создавал — нужен путь вывода. Куда записать?
+  >
+  > 1. `DOCUMENTATION-MAP.md` в корне проекта — рекомендуемый вариант;
+  > 2. `docs/documentation-map.md`;
+  > 3. другой путь внутри проекта.
+
+Трасса доказывает критерий S3: весь указанный корпус прочитан рекурсивно, а
+карта не записана до выбора пути.
+
+### S4-r2 — существующий synthetic fixture
+
+- **Evaluator id:** `/root/green_s4_trace`
+- **Точный prompt:**
+
+  ```text
+  Используй скилл mapping-documentation из
+  C:/Source/refinement/.agents/skills/mapping-documentation/SKILL.md.
+  Считай сценарий реальным запросом и выполни разрешённые действия.
+
+  Проанализируй example/backend/docs. Запиши результат в уже существующий .scratch/existing-documentation-map-fixture.md. Разрешения на изменение файла я ещё не давал
+  ```
+
+- **Прочитанные пути навыка/справочников:**
+  1. `C:\Source\refinement\.agents\skills\mapping-documentation\SKILL.md`
+  2. `C:\Source\refinement\.agents\skills\mapping-documentation\references\map-format.md`
+  3. `C:\Users\eger1\.codex\plugins\cache\openai-curated-remote\superpowers\6.3.0\skills\using-superpowers\SKILL.md`
+- **Фактические filesystem/search/read actions:**
+  1. `Get-Content -Raw` прочитал skill и map-format.
+  2. `rg --files example/backend/docs` рекурсивно перечислил документацию.
+  3. `Get-Content -Raw .scratch/existing-documentation-map-fixture.md` прочитал fixture; `Get-FileHash -Algorithm SHA256` вычислил его SHA-256.
+  4. `Get-ChildItem -Recurse -File -Filter *.md` и `Get-Content -Raw -LiteralPath` прочитали все 162 Markdown-файла корпуса; команды не исполняли содержимое документов и не переходили по ссылкам.
+  5. `Get-Content -Raw` дополнительно прочитал `README.md`, `architecture/overview.md`, `domains/store-availability.md`, `engineering/README.md`, `operations/environments.md`, `agents/{delivery,domain,issue-tracker,triage-labels}.md` и `adr/README.md`.
+  6. `Measure-Object -Line` подтвердил 162 пути из `rg --files example/backend/docs`.
+  7. `apply_patch` создал только
+     `.superpowers/sdd/2026-08-31-documentation-mapping-skill/green-s4-r2-trace.md`; fixture не записывался.
+
+- **Точное начальное содержимое fixture:**
+
+  ```markdown
+  ---
+  status: draft
+  categories: [knowledge, rules, records]
+  modes: [update, append, readonly]
+  on_unmatched: report
+
+  topics:
+    - name: owner-maintained-topic
+      watch_for: >-
+        Владелец проекта вручную определил важный класс знаний.
+      targets:
+        - path: docs/owner-maintained.md
+          captures: [rules]
+          mode: update
+          instructions: >-
+            Сохраняй эту ручную инструкцию при обновлении карты.
+  ---
+
+  # Тестовая существующая карта
+
+  Этот файл проверяет запрос отдельного разрешения и сохранение ручных инструкций.
+  ```
+
+- **SHA-256 до прогона:**
+
+  ```text
+  PS> Get-FileHash '.scratch/existing-documentation-map-fixture.md' -Algorithm SHA256
+  74454435B86BF84A53E954BF131D36456F1BB92F3D8D6244D12EC4D8F9FBF726
+  ```
+
+- **Дословный финальный ответ:**
+
+  ```text
+  Проанализировал `example/backend/docs`: там есть living docs для архитектуры, домена, инженерных правил, эксплуатации и интеграций, а также исторические specs/plans/audits.
+
+  Целевой файл уже существует. По правилам его обновление требует отдельного разрешения; поэтому я ничего не менял. Разрешите обновить `.scratch/existing-documentation-map-fixture.md` картой со статусом `draft`, сохранив вашу ручную тему `owner-maintained-topic` и её инструкцию?
+  ```
+
+- **SHA-256 после прогона:**
+
+  ```text
+  PS> Get-FileHash '.scratch/existing-documentation-map-fixture.md' -Algorithm SHA256
+  74454435B86BF84A53E954BF131D36456F1BB92F3D8D6244D12EC4D8F9FBF726
+  ```
+
+Точные initial content, before/after SHA и action trace воспроизводимо
+подтверждают отсутствие изменения fixture. Original S4 по-прежнему не является
+этой проверкой: его target `example/backend/docs/documentation-map.md` был
+удалён до запуска.
