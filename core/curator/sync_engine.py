@@ -51,6 +51,20 @@ class SyncEngine:
         self._write_lines(md_path, lines)
         return md_path
 
+    def rewrite_status(self, fact: StructuredFact) -> Path | None:
+        """Отразить смену статуса факта в .md — человеко-читаемый слой
+        не должен врать о жизненном цикле.
+
+        deprecated → маркер [УСТАРЕЛО] (ingest такие секции не воскрешает);
+        остальные статусы (hypothesis) → перерендер секции. Факт без
+        source_file (decay по usage, легаси) — молча пропускается.
+        """
+        if not fact.source_file:
+            return None
+        if fact.status == "deprecated":
+            return self.remove_fact_from_md(fact)
+        return self.write_fact_to_md(fact)
+
     def _render_fact(self, fact: StructuredFact) -> str:
         status_labels = {"verified": "Подтверждено", "hypothesis": "Гипотеза", "deprecated": "Устарело"}
         tags = ", ".join(fact.tags)

@@ -341,6 +341,19 @@ def _status() -> str:
 def _improve() -> str:
     report = improve.run()
 
+    # Жизненный цикл обязан отражаться в .md: задеприкейтнутые факты
+    # получают маркер [УСТАРЕЛО], иначе человеко-читаемый слой врёт
+    # и rebuild из .md воскрешает устаревшее
+    from curator import server_log
+    from curator.sync_engine import SyncEngine
+    sync = SyncEngine(backend, base_dir)
+    for f in report.deprecated:
+        try:
+            sync.rewrite_status(f)
+        except Exception as e:
+            server_log.log("improve", stage="writeback_error",
+                            fact=f.title, error=str(e)[:200])
+
     lines = [
         "=== Отчёт цикла улучшения ===",
         f"Всего фактов: {report.stats['total_facts']}",

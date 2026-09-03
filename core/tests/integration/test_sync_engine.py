@@ -254,3 +254,53 @@ class TestPathTraversal:
                               source_file="/etc/hosts")
         with pytest.raises(ValueError):
             engine.write_fact_to_md(fact)
+
+class TestRewriteStatus:
+    """rewrite_status: смена статуса факта ядром отражается в .md —
+    deprecated → маркер [УСТАРЕЛО], hypothesis → перерендер секции."""
+
+    def _fact(self, title="Факт для проверки статуса", status="verified"):
+        return StructuredFact(
+            type="Reference", title=title, tags=["test"], status=status,
+            content_summary="Достаточно длинная сводка факта для секции.",
+            source_file="session/reference.md",
+        )
+
+    def test_deprecated_gets_marker(self, tmp_path):
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, tmp_path)
+        fact = self._fact()
+        engine.write_fact_to_md(fact)
+
+        path = engine.rewrite_status(self._fact(title=fact.title, status="deprecated"))
+
+        text = path.read_text(encoding="utf-8")
+        assert f"### {fact.title} [УСТАРЕЛО]" in text
+        assert "*Это знание помечено как устаревшее.*" in text
+
+    def test_hypothesis_rerenders_status_line(self, tmp_path):
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, tmp_path)
+        fact = self._fact()
+        engine.write_fact_to_md(fact)
+
+        engine.rewrite_status(self._fact(title=fact.title, status="hypothesis"))
+
+        text = (tmp_path / "session" / "reference.md").read_text(encoding="utf-8")
+        assert "*Статус:* Гипотеза" in text
+        assert text.count(f"### {fact.title}") == 1, "перерендер не плодит секции"
+
+    def test_no_source_file_is_silent_noop(self):
+        from pathlib import Path as _Path
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, _Path("/nonexistent-base"))
+        fact = self._fact()
+        fact = StructuredFact(**{**fact.__dict__, "source_file": None})
+
+        assert engine.rewrite_status(fact) is None
+
+    def test_missing_file_deprecated_returns_none(self, tmp_path):
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, tmp_path)
+
+        assert engine.rewrite_status(self._fact(status="deprecated")) is None

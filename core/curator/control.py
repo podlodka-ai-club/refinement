@@ -345,6 +345,17 @@ def cmd_improve():
     from curator.improve_loop import ImproveLoop
     loop = ImproveLoop(backend)
     report = loop.run()
+
+    # Жизненный цикл в .md: задеприкейтнутые → маркер [УСТАРЕЛО]
+    base_dir = Path(os.getenv("CURATOR_BASE_DIR", os.path.expanduser("~/Documents/AI/personal/learnings")))
+    from curator.sync_engine import SyncEngine
+    sync = SyncEngine(backend, base_dir)
+    for f in report.deprecated:
+        try:
+            sync.rewrite_status(f)
+        except Exception as e:
+            print(f"  ⚠ write-back в .md не удался для '{f.title[:50]}': {e}")
+
     print(f"  Фактов: {report.stats['total_facts']}")
     print(f"  Дубликатов: {report.stats['duplicates_found']}")
     print(f"  Устаревших: {report.stats['stale_found']}")
