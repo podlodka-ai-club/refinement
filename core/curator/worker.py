@@ -106,6 +106,18 @@ def run_improve_cycle(backend, report_dir: Path, base_dir: Path | None = None) -
         "auto_decay": auto_deprecated,
     }
 
+    if report.metrics_before and report.metrics_after:
+        report_data["metrics"] = {
+            "before": {"query_coverage": report.metrics_before.query_coverage,
+                       "total_facts": report.metrics_before.total_facts,
+                       "verified_percent": report.metrics_before.verified_percent,
+                       "stale_percent": report.metrics_before.stale_percent},
+            "after": {"query_coverage": report.metrics_after.query_coverage,
+                      "total_facts": report.metrics_after.total_facts,
+                      "verified_percent": report.metrics_after.verified_percent,
+                      "stale_percent": report.metrics_after.stale_percent},
+        }
+
     report_file.parent.mkdir(parents=True, exist_ok=True)
     report_file.write_text(json.dumps(report_data, ensure_ascii=False, indent=2))
 

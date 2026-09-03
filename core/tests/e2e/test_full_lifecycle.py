@@ -115,6 +115,7 @@ class TestDeclaredLifecycle:
         assert "Найдено дубликатов: 1" in out
         assert "Противоречия" in out
         assert WINNER_TITLE in out
+        assert "Метрики (до → после)" in out, "замер пользы обязана быть в отчёте"
 
         by_title = {f.title: f for f in be.query_facts(FactQuery())}
         assert by_title[B_TITLE].status == "deprecated", "dup-проигравший устаревает"

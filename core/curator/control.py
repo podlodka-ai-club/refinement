@@ -360,6 +360,10 @@ def cmd_improve():
     print(f"  Дубликатов: {report.stats['duplicates_found']}")
     print(f"  Устаревших: {report.stats['stale_found']}")
     print(f"  Противоречий: {report.stats['contradictions_found']}")
+    if report.metrics_before and report.metrics_after:
+        b, a = report.metrics_before, report.metrics_after
+        print(f"\n  Метрики (до → после): coverage {b.query_coverage:.0%} → {a.query_coverage:.0%}, "
+              f"факты {b.total_facts} → {a.total_facts}")
     if report.duplicates:
         print(f"\n  Дубликаты ({len(report.duplicates)}):")
         for f1, f2 in report.duplicates[:5]:

@@ -201,3 +201,21 @@ class TestDeprecatedContract:
         report = self._loop(be).run()
 
         assert report.deprecated == []
+
+
+class TestMetricsBeforeAfter:
+    """metrics_before/after — замер пользы прогона для отчёта/демо:
+    coverage, факты, verified-доля до и после применения."""
+
+    def test_metrics_present_and_shrink_on_consolidation(self, tmpdir):
+        from curator.backend.local import LocalBackend
+        be = LocalBackend(str(tmpdir / "t.db"))
+        be.store_fact(StructuredFact(type="Reference", title="Одно и то же правило про kotlin классы", tags=["kotlin"], status="verified", content_summary="x" * 30))
+        be.store_fact(StructuredFact(type="Reference", title="Одно и то же правило про kotlin классы бокс", tags=["kotlin"], status="verified", content_summary="y" * 30))
+
+        report = ImproveLoop(be).run()
+
+        assert report.metrics_before is not None and report.metrics_after is not None
+        assert report.metrics_before.total_facts == 2
+        assert report.metrics_after.total_facts == 1, \
+            "консолидация сжимает активный набор — метрики это показывают"
