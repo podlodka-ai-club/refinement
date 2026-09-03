@@ -254,3 +254,145 @@ class TestPathTraversal:
                               source_file="/etc/hosts")
         with pytest.raises(ValueError):
             engine.write_fact_to_md(fact)
+
+class TestRewriteStatus:
+    """rewrite_status: смена статуса факта ядром отражается в .md —
+    deprecated → маркер [УСТАРЕЛО], hypothesis → перерендер секции."""
+
+    def _fact(self, title="Факт для проверки статуса", status="verified"):
+        return StructuredFact(
+            type="Reference", title=title, tags=["test"], status=status,
+            content_summary="Достаточно длинная сводка факта для секции.",
+            source_file="session/reference.md",
+        )
+
+    def test_deprecated_gets_marker(self, tmp_path):
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, tmp_path)
+        fact = self._fact()
+        engine.write_fact_to_md(fact)
+
+        path = engine.rewrite_status(self._fact(title=fact.title, status="deprecated"))
+
+        text = path.read_text(encoding="utf-8")
+        assert f"### {fact.title} [УСТАРЕЛО]" in text
+        assert "*Это знание помечено как устаревшее.*" in text
+
+    def test_hypothesis_rerenders_status_line(self, tmp_path):
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, tmp_path)
+        fact = self._fact()
+        engine.write_fact_to_md(fact)
+
+        engine.rewrite_status(self._fact(title=fact.title, status="hypothesis"))
+
+        text = (tmp_path / "session" / "reference.md").read_text(encoding="utf-8")
+        assert "*Статус:* Гипотеза" in text
+        assert text.count(f"### {fact.title}") == 1, "перерендер не плодит секции"
+
+    def test_no_source_file_is_silent_noop(self):
+        from pathlib import Path as _Path
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, _Path("/nonexistent-base"))
+        fact = self._fact()
+        fact = StructuredFact(**{**fact.__dict__, "source_file": None})
+
+        assert engine.rewrite_status(fact) is None
+
+    def test_missing_file_deprecated_returns_none(self, tmp_path):
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, tmp_path)
+
+        assert engine.rewrite_status(self._fact(status="deprecated")) is None
+
+
+class TestIndexRegeneration:
+    """index.md пересобирается после записей: живые факты по файлам.
+    Чужой index.md (без маркера) не трогается; index не инжестится как факты."""
+
+    def _fact(self, title, source_file="session/reference.md", status="verified"):
+        return StructuredFact(
+            type="Reference", title=title, tags=["test"], status=status,
+            content_summary="Достаточно длинная сводка факта для секции.",
+            source_file=source_file,
+        )
+
+    def test_index_created_with_marker(self, tmp_path):
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, tmp_path)
+        engine.write_fact_to_md(self._fact("Первое правило про индекс"))
+
+        index = tmp_path / "index.md"
+        assert index.exists()
+        text = index.read_text(encoding="utf-8")
+        assert SyncEngine.INDEX_MARKER in text
+        assert "## session/reference.md" in text
+        assert "- [Первое правило про индекс](session/reference.md)" in text
+
+    def test_index_updated_and_deprecated_removed(self, tmp_path):
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, tmp_path)
+        fact = self._fact("Второе правило про индекс")
+        engine.write_fact_to_md(fact)
+
+        engine.rewrite_status(self._fact("Второе правило про индекс", status="deprecated"))
+
+        text = (tmp_path / "index.md").read_text(encoding="utf-8")
+        assert "Второе правило про индекс" not in text, \
+            "устаревший факт уходит из навигации"
+
+    def test_foreign_index_untouched(self, tmp_path):
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, tmp_path)
+        (tmp_path / "index.md").write_text(
+            "# Knowledge Base\n\n- [Reference](reference/index.md) — ручная навигация\n",
+            encoding="utf-8",
+        )
+
+        engine.write_fact_to_md(self._fact("Третье правило про индекс"))
+
+        text = (tmp_path / "index.md").read_text(encoding="utf-8")
+        assert "ручная навигация" in text, "чужой index.md нельзя перезаписывать"
+        assert "Третье правило" not in text
+
+    def test_index_not_ingested_as_facts(self, tmp_path):
+        from curator.analyzers.ingest import ingest_directory
+        from curator.gatekeeper import Gatekeeper
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, tmp_path)
+        engine.write_fact_to_md(self._fact("Четвёртое правило про индекс"))
+
+        be2 = LocalBackend(":memory:")
+        saved = ingest_directory(tmp_path, be2, Gatekeeper(be2, check_duplicates=False))
+
+        assert saved == 1, "index.md не должен превращаться в факты"
+
+
+class TestSymlinkEscape:
+    """Security-trace по матрице скилла mapping-documentation: symlink
+    внутри base_dir, ведущий наружу, не может вывести запись за sandbox —
+    resolve() разворачивает symlink до проверки принадлежности корню."""
+
+    def test_symlink_escape_rejected(self, tmp_path):
+        import os as _os
+        outside_dir = tmp_path.parent / "outside-escape"
+        outside_dir.mkdir(exist_ok=True)
+
+        base = tmp_path / "learnings"
+        base.mkdir()
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, base)
+
+        link = base / "escape.md"
+        _os.symlink(outside_dir / "target.md", link)
+
+        fact = StructuredFact(
+            type="Reference", title="Факт пытающийся выйти через симлинк", tags=["t"],
+            status="verified", content_summary="x" * 20,
+            source_file="escape.md",
+        )
+        with pytest.raises(ValueError, match="вне base_dir"):
+            engine.write_fact_to_md(fact)
+
+        assert not (outside_dir / "target.md").exists(), \
+            "ни одного байта за пределами sandbox"

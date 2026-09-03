@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field, replace
 from curator.backend.interface import MemoryBackend
 from curator.models import StructuredFact, FactQuery
+from curator.eval_runner import EvalRunner
 
 
 @dataclass
@@ -18,6 +19,13 @@ class ImproveReport:
     resolutions: list[Resolution] = field(default_factory=list)
     stats: dict = field(default_factory=dict)
     events: list = field(default_factory=list)
+    # Факты, переведённые этим прогоном в deprecated (dup-проигравшие,
+    # stale по eval-гейту, проигравшие противоречия) — для write-back в .md
+    deprecated: list[StructuredFact] = field(default_factory=list)
+    # Замер пользы прогона «до → после» (демо/отчёт: coverage вырос,
+    # дубли схлопнуты). None — цикл не нашёл действий.
+    metrics_before: object | None = None
+    metrics_after: object | None = None
 
 
 class ImproveLoop:
@@ -31,6 +39,8 @@ class ImproveLoop:
         # уже деприкнутых фактов на каждом прогоне.
         all_facts = [f for f in self.backend.query_facts(FactQuery()) if f.status != "deprecated"]
         report = ImproveReport()
+        runner = EvalRunner()
+        report.metrics_before = runner.measure(all_facts)
         report.duplicates = self._find_duplicates(all_facts)
         report.stale = self._find_stale(all_facts)
         report.contradictions = self._find_contradictions(all_facts)
@@ -43,8 +53,6 @@ class ImproveLoop:
 
         from curator.observability import Observability, ObserveEvent
         obs = Observability()
-        from curator.eval_runner import EvalRunner
-        runner = EvalRunner()
 
         if report.duplicates:
             action = runner.evaluate_consolidation(all_facts, report.duplicates)
@@ -59,6 +67,7 @@ class ImproveLoop:
             if action.improved:
                 for _, dup in report.duplicates:
                     self.backend.store_fact(replace(dup, status="deprecated"))
+                    report.deprecated.append(replace(dup, status="deprecated"))
 
         if report.stale:
             action = runner.evaluate_deprecation(all_facts, report.stale)
@@ -73,12 +82,14 @@ class ImproveLoop:
             if action.improved:
                 for f in report.stale:
                     self.backend.store_fact(replace(f, status="deprecated"))
+                    report.deprecated.append(replace(f, status="deprecated"))
 
         if report.contradictions:
             resolutions = self._resolve_contradictions(report.contradictions)
             report.resolutions = resolutions
             for r in resolutions:
                 self.backend.store_fact(replace(r.loser, status="deprecated"))
+                report.deprecated.append(replace(r.loser, status="deprecated"))
             obs.log(ObserveEvent(
                 action="contradiction_resolved",
                 applied=True,
@@ -87,6 +98,9 @@ class ImproveLoop:
             ))
 
         report.events = obs.recent(10)
+        report.metrics_after = runner.measure(
+            [f for f in self.backend.query_facts(FactQuery()) if f.status != "deprecated"]
+        )
         return report
 
     def _find_duplicates(self, facts: list[StructuredFact]) -> list[tuple[StructuredFact, StructuredFact]]:

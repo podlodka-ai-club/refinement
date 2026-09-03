@@ -20,12 +20,9 @@ import os
 import sys
 import json
 import time
-import signal
-import subprocess
 from pathlib import Path
 from datetime import datetime, timedelta
 
-PID_FILE = Path.home() / ".curator" / "worker.pid"
 REPORT_DIR = Path.home() / ".curator" / "reports"
 IMPROVE_LOG = Path.home() / ".curator" / "improve_events.jsonl"
 USAGE_JSON = Path.home() / ".curator" / "usage.json"
@@ -63,8 +60,9 @@ def _table(headers: list[str], rows: list[list], title: str = ""):
 def cmd_status():
     _header("Curator Status")
 
-    pid = _read_pid()
-    if pid and _is_running(pid):
+    from curator.daemon import read_pid, is_running, pid_is_curator_worker
+    pid = read_pid()
+    if pid and is_running(pid) and pid_is_curator_worker(pid):
         print(f"  Worker: ✅ запущен (pid {pid})")
     else:
         print("  Worker: ⛔ остановлен")
@@ -287,63 +285,13 @@ def cmd_get(query: str = ""):
 
 
 def cmd_start():
-    if _read_pid() and _is_running(_read_pid()):
-        print(f"Worker уже запущен (pid {_read_pid()}). Остановите: curator stop")
-        return
-
-    PID_FILE.parent.mkdir(parents=True, exist_ok=True)
-    interval = os.getenv("IMPROVE_INTERVAL_MINUTES", "1440")
-    backend = os.getenv("MEMORY_BACKEND", "local")
-
-    venv_python = sys.executable
-    worker_cmd = [
-        venv_python, "-m", "curator.worker",
-        "--daemon",
-    ]
-    env = os.environ.copy()
-    env["MEMORY_BACKEND"] = backend
-    env["IMPROVE_INTERVAL_MINUTES"] = interval
-
-    log_file = Path.home() / ".curator" / "worker.log"
-    with open(log_file, "a") as log:
-        log.write(f"\n[{datetime.now().isoformat()}] Starting worker...\n")
-        proc = subprocess.Popen(
-            worker_cmd, env=env,
-            stdout=log, stderr=log,
-            start_new_session=True,
-        )
-        PID_FILE.write_text(str(proc.pid))
-
-    time.sleep(0.5)
-    if _is_running(proc.pid):
-        print(f"✅ Worker запущен (pid {proc.pid})")
-        print(f"   Интервал: {interval} мин ({_human_interval(int(interval))})")
-        print(f"   Бэкенд: {backend}")
-        print(f"   Лог: {log_file}")
-    else:
-        print(f"❌ Worker не запустился. Проверьте лог: {log_file}")
+    from curator.daemon import ensure_worker
+    print(ensure_worker())
 
 
 def cmd_stop():
-    pid = _read_pid()
-    if not pid:
-        print("Worker не запущен.")
-        return
-    if not _is_running(pid):
-        print(f"Процесс {pid} не существует. Удаляю pid-файл.")
-        PID_FILE.unlink(missing_ok=True)
-        return
-    if not _pid_is_curator_worker(pid):
-        print(f"Процесс {pid} не похож на curator-worker (pid переиспользован ОС?) — не убиваю, удаляю pid-файл.")
-        PID_FILE.unlink(missing_ok=True)
-        return
-    os.kill(pid, signal.SIGTERM)
-    time.sleep(0.5)
-    if _is_running(pid):
-        os.kill(pid, signal.SIGKILL)
-        time.sleep(0.3)
-    print(f"✅ Worker остановлен (pid {pid})")
-    PID_FILE.unlink(missing_ok=True)
+    from curator.daemon import stop_worker
+    print(stop_worker())
 
 
 def cmd_demo():
@@ -397,10 +345,25 @@ def cmd_improve():
     from curator.improve_loop import ImproveLoop
     loop = ImproveLoop(backend)
     report = loop.run()
+
+    # Жизненный цикл в .md: задеприкейтнутые → маркер [УСТАРЕЛО]
+    base_dir = Path(os.getenv("CURATOR_BASE_DIR", os.path.expanduser("~/Documents/AI/personal/learnings")))
+    from curator.sync_engine import SyncEngine
+    sync = SyncEngine(backend, base_dir)
+    for f in report.deprecated:
+        try:
+            sync.rewrite_status(f)
+        except Exception as e:
+            print(f"  ⚠ write-back в .md не удался для '{f.title[:50]}': {e}")
+
     print(f"  Фактов: {report.stats['total_facts']}")
     print(f"  Дубликатов: {report.stats['duplicates_found']}")
     print(f"  Устаревших: {report.stats['stale_found']}")
     print(f"  Противоречий: {report.stats['contradictions_found']}")
+    if report.metrics_before and report.metrics_after:
+        b, a = report.metrics_before, report.metrics_after
+        print(f"\n  Метрики (до → после): coverage {b.query_coverage:.0%} → {a.query_coverage:.0%}, "
+              f"факты {b.total_facts} → {a.total_facts}")
     if report.duplicates:
         print(f"\n  Дубликаты ({len(report.duplicates)}):")
         for f1, f2 in report.duplicates[:5]:
@@ -448,46 +411,6 @@ def _make_backend():
     else:
         from curator.backend.local import LocalBackend
         return LocalBackend(os.path.expanduser("~/.curator/knowledge.db"))
-
-
-def _read_pid():
-    if not PID_FILE.exists():
-        return None
-    try:
-        return int(PID_FILE.read_text().strip())
-    except (ValueError, OSError):
-        return None
-
-
-def _is_running(pid):
-    try:
-        os.kill(pid, 0)
-        return True
-    except (ProcessLookupError, OSError):
-        return False
-
-
-def _pid_is_curator_worker(pid: int) -> bool:
-    """Верификация перед kill: pid-файл мог протухнуть, ОС переиспользовала pid.
-
-    Матчим точные токены командной строки: `python -m curator.worker`
-    (как запускает cmd_start) и entrypoint `curator-worker`. Подстрочные
-    совпадения (`rg curator.worker`, `tail -f curator.worker.log`) — нет.
-    """
-    try:
-        out = subprocess.run(
-            ["ps", "-p", str(pid), "-o", "command="],
-            capture_output=True, text=True, timeout=5,
-        )
-    except Exception:
-        return False
-    tokens = out.stdout.split()
-    for i, tok in enumerate(tokens):
-        if tok == "-m" and i + 1 < len(tokens) and tokens[i + 1] == "curator.worker":
-            return True
-        if tok == "curator-worker" or tok.endswith("/curator-worker"):
-            return True
-    return False
 
 
 def _read_events():

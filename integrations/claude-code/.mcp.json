@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "memory-curator": {
+      "command": "<путь-к-репо>/core/.venv/bin/curator-mcp-server",
+      "env": {
+        "MEMORY_BACKEND": "local",
+        "CURATOR_BASE_DIR": "~/Documents/AI/personal/learnings"
+      }
+    }
+  }
+}

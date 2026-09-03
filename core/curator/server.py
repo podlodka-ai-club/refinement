@@ -341,6 +341,19 @@ def _status() -> str:
 def _improve() -> str:
     report = improve.run()
 
+    # Жизненный цикл обязан отражаться в .md: задеприкейтнутые факты
+    # получают маркер [УСТАРЕЛО], иначе человеко-читаемый слой врёт
+    # и rebuild из .md воскрешает устаревшее
+    from curator import server_log
+    from curator.sync_engine import SyncEngine
+    sync = SyncEngine(backend, base_dir)
+    for f in report.deprecated:
+        try:
+            sync.rewrite_status(f)
+        except Exception as e:
+            server_log.log("improve", stage="writeback_error",
+                            fact=f.title, error=str(e)[:200])
+
     lines = [
         "=== Отчёт цикла улучшения ===",
         f"Всего фактов: {report.stats['total_facts']}",
@@ -348,6 +361,14 @@ def _improve() -> str:
         f"Устаревших: {report.stats['stale_found']}",
         f"Противоречий: {report.stats['contradictions_found']}",
     ]
+
+    if report.metrics_before and report.metrics_after:
+        b, a = report.metrics_before, report.metrics_after
+        lines.append(
+            f"\nМетрики (до → после): coverage {b.query_coverage:.0%} → {a.query_coverage:.0%}, "
+            f"факты {b.total_facts} → {a.total_facts}, "
+            f"verified {b.verified_percent:.0%} → {a.verified_percent:.0%}"
+        )
 
     if report.duplicates:
         lines.append("\nДубликаты:")
@@ -415,6 +436,16 @@ def main():
     import asyncio
     import sys
     print(f"[curator] MCP server starting: BACKEND={os.getenv('MEMORY_BACKEND', 'local')}", file=sys.stderr)
+
+    # Инвариант: worker жив, пока жив MCP-сервер. opencode стартует сервер —
+    # ensure поднимает мёртвый демон и чистит протухший pid. Выключатель для
+    # окружений, где фоновый процесс нежелателен: CURATOR_AUTO_WORKER=false.
+    if os.getenv("CURATOR_AUTO_WORKER", "true").lower() != "false":
+        try:
+            from curator.daemon import ensure_worker
+            print(f"[curator] worker: {ensure_worker()}", file=sys.stderr)
+        except Exception as e:
+            print(f"[curator] worker ensure не удался: {e}", file=sys.stderr)
 
     async def _run():
         async with stdio_server() as (read_stream, write_stream):

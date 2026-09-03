@@ -157,3 +157,65 @@ class TestResolution:
         resolutions = self.loop._resolve_contradictions([(f1, f2), (f3, f4)])
         assert len(resolutions) == 2
         assert all(r.winner.status == "verified" for r in resolutions)
+
+class TestDeprecatedContract:
+    """report.deprecated — все факты, переведённые прогоном в deprecated
+    (dup-проигравшие, stale по гейту, проигравшие противоречий): write-back
+    в .md идёт по этому списку."""
+
+    def _loop(self, be):
+        from curator.improve_loop import ImproveLoop
+        return ImproveLoop(be)
+
+    def test_dup_loser_in_deprecated(self, tmpdir):
+        from curator.backend.local import LocalBackend
+        from curator.models import StructuredFact
+        be = LocalBackend(str(tmpdir / "t.db"))
+        be.store_fact(StructuredFact(type="Reference", title="Одно и то же правило про kotlin классы", tags=["kotlin"], status="verified", content_summary="x" * 30))
+        be.store_fact(StructuredFact(type="Reference", title="Одно и то же правило про kotlin классы бокс", tags=["kotlin"], status="verified", content_summary="y" * 30))
+
+        report = self._loop(be).run()
+
+        assert any(f.status == "deprecated" for f in report.deprecated), \
+            "dup-проигравший обязан попасть в report.deprecated"
+
+    def test_contradiction_loser_in_deprecated(self, tmpdir):
+        from curator.backend.local import LocalBackend
+        from curator.models import StructuredFact
+        be = LocalBackend(str(tmpdir / "t.db"))
+        be.store_fact(StructuredFact(type="Reference", title="Всегда используй rxjava в новых модулях", tags=["rx", "java"], status="verified", content_summary="короткая сводка"))
+        be.store_fact(StructuredFact(type="Reference", title="Никогда не используй rxjava в новых модулях", tags=["rx", "java"], status="verified", content_summary="подробная сводка подлиннее для победы"))
+
+        report = self._loop(be).run()
+
+        assert len(report.resolutions) == 1
+        loser_titles = {f.title for f in report.deprecated}
+        assert report.resolutions[0].loser.title in loser_titles
+
+    def test_clean_base_empty_deprecated(self, tmpdir):
+        from curator.backend.local import LocalBackend
+        from curator.models import StructuredFact
+        be = LocalBackend(str(tmpdir / "t.db"))
+        be.store_fact(StructuredFact(type="Reference", title="Уникальное правило про compose стейт", tags=["compose"], status="verified", content_summary="x" * 30))
+
+        report = self._loop(be).run()
+
+        assert report.deprecated == []
+
+
+class TestMetricsBeforeAfter:
+    """metrics_before/after — замер пользы прогона для отчёта/демо:
+    coverage, факты, verified-доля до и после применения."""
+
+    def test_metrics_present_and_shrink_on_consolidation(self, tmpdir):
+        from curator.backend.local import LocalBackend
+        be = LocalBackend(str(tmpdir / "t.db"))
+        be.store_fact(StructuredFact(type="Reference", title="Одно и то же правило про kotlin классы", tags=["kotlin"], status="verified", content_summary="x" * 30))
+        be.store_fact(StructuredFact(type="Reference", title="Одно и то же правило про kotlin классы бокс", tags=["kotlin"], status="verified", content_summary="y" * 30))
+
+        report = ImproveLoop(be).run()
+
+        assert report.metrics_before is not None and report.metrics_after is not None
+        assert report.metrics_before.total_facts == 2
+        assert report.metrics_after.total_facts == 1, \
+            "консолидация сжимает активный набор — метрики это показывают"
