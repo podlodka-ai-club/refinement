@@ -366,3 +366,33 @@ class TestIndexRegeneration:
         saved = ingest_directory(tmp_path, be2, Gatekeeper(be2, check_duplicates=False))
 
         assert saved == 1, "index.md не должен превращаться в факты"
+
+
+class TestSymlinkEscape:
+    """Security-trace по матрице скилла mapping-documentation: symlink
+    внутри base_dir, ведущий наружу, не может вывести запись за sandbox —
+    resolve() разворачивает symlink до проверки принадлежности корню."""
+
+    def test_symlink_escape_rejected(self, tmp_path):
+        import os as _os
+        outside_dir = tmp_path.parent / "outside-escape"
+        outside_dir.mkdir(exist_ok=True)
+
+        base = tmp_path / "learnings"
+        base.mkdir()
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, base)
+
+        link = base / "escape.md"
+        _os.symlink(outside_dir / "target.md", link)
+
+        fact = StructuredFact(
+            type="Reference", title="Факт пытающийся выйти через симлинк", tags=["t"],
+            status="verified", content_summary="x" * 20,
+            source_file="escape.md",
+        )
+        with pytest.raises(ValueError, match="вне base_dir"):
+            engine.write_fact_to_md(fact)
+
+        assert not (outside_dir / "target.md").exists(), \
+            "ни одного байта за пределами sandbox"
