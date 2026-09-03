@@ -32,27 +32,31 @@ def _fact(title: str, tags: list[str], status: str = "verified", summary: str = 
 
 
 class TestNiceToHave:
-    def test_N1_забывание_auto_decay(self, iso_feedback, iso_observability, tmp_path):
-        """N1: неиспользуемые факты затухают: verified→hypothesis (>30д), hypothesis→deprecated (>90д)."""
+    def test_N1_забывание_семантическое(self, iso_feedback, iso_observability, tmp_path):
+        """N1: устаревание — семантическое (неподтверждённая гипотеза → deprecated
+        по eval-гейту). Таймерного decay нет: время не делает факт ложным —
+        неиспользуемое verified-знание не деградирует, телеметрия остаётся
+        observability для человека."""
         be = LocalBackend(":memory:")
+        # verified + 40 дней без запросов — обязан остаться verified
         be.store_fact(_fact("Правило про использование Retrofit в сетевом модуле", ["android"]))
-        # «kotlin» в заголовке: stale-депрекация блокируется eval-ом (coverage упал бы),
-        # факт деградирует ТОЛЬКО через decay-цепочку worker-а
-        be.store_fact(_fact("Старая гипотеза про kotlin и производительность боксинга", ["kotlin"], status="hypothesis"))
+        # hypothesis без покрытия тестовых запросов: депрекация улучшает
+        # метрики → eval-гейт одобряет семантическое устаревание
+        be.store_fact(_fact("Неподтверждённая гипотеза про docker деплой", ["docker"], status="hypothesis"))
 
         now = time.time()
         iso_feedback.write_text(json.dumps({
             "Правило про использование Retrofit в сетевом модуле": {"count": 1, "last_access": now - 40 * 86400},
-            "Старая гипотеза про kotlin и производительность боксинга": {"count": 1, "last_access": now - 100 * 86400},
+            "Неподтверждённая гипотеза про docker деплой": {"count": 0, "last_access": now - 100 * 86400},
         }), encoding="utf-8")
 
         worker_mod.run_improve_cycle(be, tmp_path / "reports")
 
         statuses = {f.title: f.status for f in be.query_facts(FactQuery())}
-        assert statuses["Правило про использование Retrofit в сетевом модуле"] == "hypothesis", \
-            "unused > 30д: verified → hypothesis"
-        assert statuses["Старая гипотеза про kotlin и производительность боксинга"] == "deprecated", \
-            "unused > 90д: hypothesis → deprecated"
+        assert statuses["Правило про использование Retrofit в сетевом модуле"] == "verified", \
+            "таймерного decay нет: 40 дней без запросов не деградируют verified"
+        assert statuses["Неподтверждённая гипотеза про docker деплой"] == "deprecated", \
+            "семантическое устаревание: гипотеза без ценности уходит по гейту"
 
     def test_N2_противоречия_разрешаются(self, iso_observability):
         """N2: конфликт «использовать X» vs «не использовать X» — побеждает verified."""

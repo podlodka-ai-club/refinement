@@ -2,7 +2,7 @@
 
 Пошагово прогоняет полный жизненный цикл знания на изолированной tmp-базе:
 кандидаты → gatekeeper → сохранение + write-back в .md → query → improve
-(дубликаты, противоречия) → auto-decay → финальный статус.
+(дубликаты, противоречия) → телеметрия использования → финальный статус.
 
 Все вызовы настоящие — те же функции, что работают в проде (gatekeeper,
 backend, ImproveLoop, worker). Никакой синтетики: каждый этап — реальный вызов.
@@ -128,7 +128,7 @@ def run_tour(backend: str = "local", keep: bool = False, verbose: bool = True) -
         out("")
 
         # ── ЭТАП 0: вход ─────────────────────────────────────────
-        _banner(out, "ЭТАП 0/6 · ВХОД: агент харнеса извлек кандидатов из сессии")
+        _banner(out, "ЭТАП 0/6 · ВХОД: агент извлек кандидатов из сессии")
         out("""  Первая сессия принесла 9 кандидатов:
   · 2 чистых знания (инструмент + техническое правило)
   · 2 похожих дубликата (обходят gatekeeper, ловит improve-консолидация)
@@ -231,8 +231,8 @@ def run_tour(backend: str = "local", keep: bool = False, verbose: bool = True) -
             out(f"    ✅ победил: '{r.winner.title[:60]}' ({r.reason})")
             out(f"    ⛔ проиграл: '{r.loser.title[:60]}' → deprecated")
 
-        # ── ЭТАП 5: auto-decay ──────────────────────────────────
-        _banner(out, "ЭТАП 5/6 · AUTO-DECAY: неиспользуемые знания затухают")
+        # ── ЭТАП 5: телеметрия использования ─────────────────────
+        _banner(out, "ЭТАП 5/6 · ТЕЛЕМЕТРИЯ: что реально читают (совет, не приговор)")
         usage_path = tmp / "usage.json"
         usage = json.loads(usage_path.read_text()) if usage_path.exists() else {}
         usage["MCP SDK v2: правильная сигнатура хендлеров"] = {"count": 5, "last_access": time.time() - 40 * 86400}
@@ -241,13 +241,19 @@ def run_tour(backend: str = "local", keep: bool = False, verbose: bool = True) -
         out("  Симуляция статистики: 'MCP SDK v2…' не запрашивали 40 дней,")
         out("  'Data class…' запрашивали сегодня\n")
 
-        import curator.worker as worker_mod
-        with _isolated(tmp):
-            cycle = worker_mod.run_improve_cycle(be, tmp / "reports")
-        result["decay"] = len(cycle.get("auto_decay", []))
-        for d in cycle.get("auto_decay", []):
-            out(f"    ⏳ '{d['title'][:60]}'")
-            out(f"       {d['from']} → {d['to']} ({d['reason']})")
+        from curator.retrieval_feedback import RetrievalFeedback
+        fb = RetrievalFeedback(str(usage_path))
+        out(f"  Часто запрашиваемые ({len(fb.get_stats(5))}):")
+        for item in fb.get_stats(5):
+            out(f"    {item['title'][:60]} ({item['count']}×)")
+        unused = fb.get_unused(30)
+        if unused:
+            out(f"\n  Не запрашивались >30 дней ({len(unused)}):")
+            for title in unused:
+                out(f"    ⏳ {title[:70]}")
+        out("\n  Решение за человеком: таймерного decay нет — время не делает")
+        out("  факт ложным. Устаревание: по смыслу (противоречие/дубль) или руками.")
+        result["decay"] = 0
 
         # ── ЭТАП 6: финал ────────────────────────────────────────
         _banner(out, "ЭТАП 6/6 · ИТОГ: состояние памяти после полного цикла")

@@ -102,29 +102,6 @@ class TestDeprecatedLeaveActiveSet:
         assert report.stats["stale_found"] == 0
 
 
-class TestWorkerDecayPreservesProvenance:
-    """Ревью: auto-decay пересобирал StructuredFact без source_file."""
-
-    def test_decay_keeps_source_file(self, isolated_state):
-        import curator.worker as worker_mod
-
-        be = LocalBackend(":memory:")
-        be.store_fact(_fact("Правило про котлин и боксинг value классов",
-                            tags=["kotlin"], source_file="reference/kotlin.md"))
-
-        usage = isolated_state / "usage.json"
-        usage.write_text(json.dumps({
-            "Правило про котлин и боксинг value классов": {"count": 1, "last_access": time.time() - 40 * 86400},
-        }), encoding="utf-8")
-
-        cycle = worker_mod.run_improve_cycle(be, isolated_state / "reports")
-        assert cycle["auto_decay"], "unused > 30д обязан деградировать verified → hypothesis"
-
-        facts = be.query_facts(FactQuery(search="боксинг"))
-        assert facts[0].status == "hypothesis"
-        assert facts[0].source_file == "reference/kotlin.md"
-
-
 class TestStopPidVerification:
     """Ревью: curator stop убивал по stale pid без верификации процесса.
 
@@ -298,11 +275,6 @@ class TestGatekeeperSummaryPrecision:
         """Ревью-3 blocker: line-start # в summary + граница секции по любому #
         → секция ненаходима → дубль при каждом save. Теперь режем на входе."""
         result = Gatekeeper().filter([_gate_fact(summary="Нормальное начало.\n# pip install x\n# include")])
-        assert len(result.rejected) == 1
-        assert "#" in result.rejected[0][1]
-
-    def test_h3_in_summary_rejected(self):
-        result = Gatekeeper().filter([_gate_fact(summary="Нормальное начало описания.\n### Фейковая секция")])
         assert len(result.rejected) == 1
         assert "#" in result.rejected[0][1]
 

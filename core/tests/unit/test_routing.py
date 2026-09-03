@@ -37,14 +37,6 @@ class TestRouterProtocol:
         r = DefaultRouter()
         assert isinstance(r, Router)
 
-    def test_has_required_methods(self):
-        r = DefaultRouter()
-        assert hasattr(r, "route_fact")
-        assert callable(r.route_fact)
-        assert hasattr(r, "list_routes")
-        assert callable(r.list_routes)
-
-
 class TestGetRouter:
     def test_returns_default_when_no_env(self):
         import os

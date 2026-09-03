@@ -161,56 +161,61 @@ class TestDeclaredLifecycle:
         assert B_TITLE not in index, "устаревшие не попадают в навигацию"
 
 
-class TestDecayByUsage:
-    """Заявка «устаревание по использованию»: 30д без запросов →
-    verified→hypothesis, 90д → hypothesis→deprecated (worker-цикл)."""
+class TestUsageTelemetry:
+    """Семантика D: телеметрия — observability, не приговор. 40/100 дней без
+    запросов не меняют статусы (таймерного decay нет); семантическое
+    устаревание (hypothesis по eval-гейту) работает как раньше."""
 
-    def test_decay(self, tmp_path, monkeypatch):
+    def test_telemetry_does_not_punish(self, tmp_path, monkeypatch):
         home = tmp_path
         md_dir = home / "learnings"
         md_dir.mkdir()
         be = LocalBackend(str(home / "db" / "knowledge.db"))
 
-        fact_recent = StructuredFact(type="Reference", title="Проверенное правило про compose рекомпозицию",
-                                     tags=["compose"], status="verified",
-                                     content_summary="Рекомпозиция в compose управляется stability входов.",
-                                     source_file="session/reference.md")
-        # title содержит латинское "architecture": факт уникально покрывает
-        # тестовый запрос eval-гейта → improve НЕ деприкейтит его (coverage
-        # упал бы), устаревание делает decay-цикл по usage — ровно заявка
-        fact_old_hyp = StructuredFact(type="Reference", title="Старая гипотеза про architecture модулей",
-                                      tags=["architecture"], status="hypothesis",
-                                      content_summary="Гипотеза: слои обязаны делиться по модулям.",
-                                      source_file="session/reference.md")
-        for f in (fact_recent, fact_old_hyp):
+        fact_verified = StructuredFact(type="Reference", title="Проверенное правило про compose рекомпозицию",
+                                       tags=["compose"], status="verified",
+                                       content_summary="Рекомпозиция в compose управляется stability входов.",
+                                       source_file="session/reference.md")
+        # «architecture» в title: покрывает тестовый запрос гейта →
+        # семантическая депрекация блокируется (coverage упал бы)
+        fact_hyp = StructuredFact(type="Reference", title="Старая гипотеза про architecture модулей",
+                                  tags=["architecture"], status="hypothesis",
+                                  content_summary="Гипотеза: слои обязаны делиться по модулям.",
+                                  source_file="session/reference.md")
+        for f in (fact_verified, fact_hyp):
             be.store_fact(f)
             SyncEngine(be, md_dir).write_fact_to_md(f)
 
-        # usage-сид: fresh не запрашивали 40 дней, old — 100 дней
+        # usage-сид: verified не трогали 40 дней, hypothesis — 100 дней
         usage_path = home / ".curator" / "usage.json"
         usage_path.parent.mkdir(parents=True)
         now = time.time()
         usage_path.write_text(json.dumps({
-            fact_recent.title: {"count": 1, "last_access": now - 40 * 86400},
-            fact_old_hyp.title: {"count": 0, "last_access": now - 100 * 86400},
+            fact_verified.title: {"count": 1, "last_access": now - 40 * 86400},
+            fact_hyp.title: {"count": 0, "last_access": now - 100 * 86400},
         }))
 
         from curator import worker
         data = worker.run_improve_cycle(be, home / "reports", base_dir=md_dir)
 
         by_title = {f.title: f for f in be.query_facts(FactQuery())}
-        assert by_title[fact_recent.title].status == "hypothesis", "unused > 30д деградирует"
-        assert by_title[fact_old_hyp.title].status == "deprecated", "unused > 90д уходит"
-
-        decay_titles = {e["title"]: e for e in data["auto_decay"]}
-        assert decay_titles[fact_recent.title]["reason"] == "unused > 30d"
-        assert decay_titles[fact_old_hyp.title]["reason"] == "unused > 90d"
+        assert by_title[fact_verified.title].status == "verified", \
+            "таймерного decay нет: 40 дней молчания не деградируют verified"
+        assert by_title[fact_hyp.title].status == "hypothesis", \
+            "ценное знание (покрывает запрос) eval-гейт защищает и от таймера, и от депрекации"
+        assert "auto_decay" not in data
         assert list((home / "reports").glob("improve_*.json")), "отчёт цикла обязан писаться"
 
-        # жизненный цикл в .md: deprecated → [УСТАРЕЛО], hypothesis → Гипотеза
+        # человек видит статистику — но сам решает
+        fb = RetrievalFeedback(str(usage_path))
+        unused = fb.get_unused(30)
+        assert fact_verified.title in unused and fact_hyp.title in unused, \
+            "телеметрия обязана показывать забытое человеку"
+
+        # .md не врёт: секции нетронуты — ни [УСТАРЕЛО], ни смены статуса
         md_text = (md_dir / "session" / "reference.md").read_text(encoding="utf-8")
-        assert f"### {fact_old_hyp.title} [УСТАРЕЛО]" in md_text
-        assert "*Статус:* Гипотеза" in md_text
+        assert "[УСТАРЕЛО]" not in md_text
+        assert "*Статус:* Подтверждено" in md_text
 
 
 class TestOfflineOutbox:

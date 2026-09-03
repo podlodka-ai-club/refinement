@@ -21,11 +21,11 @@ class TestTour:
         assert result["duplicates_found"] == 1
         assert result["contradictions_found"] == 1
 
-        # Этап 5: auto-decay — 1 факт затух (verified → hypothesis, unused > 30д)
-        assert result["decay"] == 1
+        # Этап 5: телеметрия — статистика без казни (таймерного decay нет)
+        assert result["decay"] == 0
 
-        # Этап 6: финал — 7 фактов: 4 verified / 2 deprecated / 1 hypothesis
-        assert result["final_by_status"] == {"verified": 4, "deprecated": 2, "hypothesis": 1}
+        # Этап 6: финал — 7 фактов: 5 verified / 2 deprecated
+        assert result["final_by_status"] == {"verified": 5, "deprecated": 2}
 
     def test_tour_does_not_touch_real_curator_dir(self, tmp_path, monkeypatch):
         """Тур обязан писать только в свою tmp — реальные ~/.curator не трогаем."""

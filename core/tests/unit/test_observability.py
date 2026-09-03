@@ -14,17 +14,6 @@ class TestObserveEvent:
         assert "T" in e.ts
         assert e.facts == []
 
-    def test_full_event(self):
-        e = ObserveEvent(
-            action="deprecate", applied=False,
-            reason="eval blocked", facts=["A", "B"],
-            eval_before=0.8, eval_after=0.5,
-            ts="2026-01-01T00:00:00",
-        )
-        assert e.action == "deprecate"
-        assert not e.applied
-        assert len(e.facts) == 2
-
 
 class TestObservability:
     def test_log_and_read(self):

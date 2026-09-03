@@ -2,8 +2,9 @@
 
 Запуск: curator-mcp-server
 
-Извлечение знаний делает агент (LLM) в слое харнеса — скилл передаёт готовых
-кандидатов через `candidates`. Бэкенд управляет данными: валидация (gatekeeper),
+Извлечение знаний делает сам агент (LLM) — opencode сейчас, любой MCP-клиент
+(Claude Code) по тому же контракту. Скилл передаёт готовых кандидатов через
+`candidates`. Бэкенд управляет данными: валидация (gatekeeper),
 хранение, write-back в .md, improve loop.
 
 Конфигурация через переменные окружения:
@@ -74,7 +75,7 @@ async def handle_list_tools(ctx, request):
     tools = [
         Tool(
             name="curator_session_capture",
-            description="Сохранить готовые кандидаты знаний (извлекает агент в харнесе): валидация gatekeeper → preview → сохранение",
+            description="Сохранить готовые кандидаты знаний (извлекает сам агент): валидация gatekeeper → preview → сохранение",
             inputSchema={
                 "type": "object",
                 "properties": {

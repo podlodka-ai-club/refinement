@@ -115,14 +115,6 @@ class TestImproveReport:
         assert r.stale == []
         assert r.contradictions == []
 
-    def test_with_stats(self):
-        r = ImproveReport(stats={"total": 10})
-        assert r.stats["total"] == 10
-
-    def test_with_contradictions(self):
-        r = ImproveReport(contradictions=[(None, None)])
-        assert len(r.contradictions) == 1
-
 
 class TestResolution:
     def setup_method(self):

@@ -22,7 +22,7 @@
 
 | ID | Требование | Тест | Статус |
 |----|-----------|------|--------|
-| N1 | Забывание: verified→hypothesis (>30д) → deprecated (>90д) | `test_nice_to_have.py::test_N1_забывание_auto_decay` | ✅ |
+| N1 | Забывание: семантическое устаревание (hypothesis → deprecated по eval-гейту), таймерного decay нет — телеметрия = observability | `test_nice_to_have.py::test_N1_забывание_семантическое` | ✅ |
 | N2 | Противоречия: verified побеждает hypothesis | `test_N2_противоречия_разрешаются` | ✅ |
 | N3 | Eval gate: блокирует ухудшение метрик, разрешает чистку | `test_N3_eval_блокирует_ухудшение` | ✅ |
 | N4 | Human-in-the-loop: без approve база не меняется | `test_N4_human_in_the_loop` | ✅ |

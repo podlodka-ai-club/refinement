@@ -51,8 +51,8 @@ repo: https://github.com/podlodka-ai-club/refinement
 
 | # | Требование | Memory Curator | Статус |
 |---|-----------|----------------|--------|
-| 1 | Обрабатывать поток задач из выбранного источника | `.md` файлы в `learnings/` (ingest) + сессии харнесов (candidates от агента) | ✅ |
-| 2 | Цикл «выполнил → оценил → извлёк урок» | Агент харнеса извлекает → `curator_session_capture(candidates)` → `gatekeeper.py` → backend (xmemory/SQLite) → `improve_loop.py` | ✅ |
+| 1 | Обрабатывать поток задач из выбранного источника | `.md` файлы в `learnings/` (ingest) + сессии opencode / Claude Code (candidates от агента) | ✅ |
+| 2 | Цикл «выполнил → оценил → извлёк урок» | Агент извлекает → `curator_session_capture(candidates)` → `gatekeeper.py` → backend (xmemory/SQLite) → `improve_loop.py` | ✅ |
 | 3 | Менять поведение на основе опыта | Improve loop находит дубликаты → consolidation; stale → deprecation; eval gate проверяет перед изменением | ✅ |
 | 4 | Хранить память между рестартами | xmemory (primary) + SQLite (fallback, персистентный файл + offline-outbox, `curator sync`) | ✅ |
 | 5 | Поработать с реальными данными и обучиться на них | ingest реальных `.md` из `learnings/` + реальные сессии OpenCode (`session_reader.py`, opencode.db) + фикстуры структуры learnings в тестах | ✅ |
@@ -66,7 +66,7 @@ repo: https://github.com/podlodka-ai-club/refinement
 
 | Блок | Описание | Memory Curator | Статус |
 |------|----------|----------------|--------|
-| Забывание и устаревание | Обесценивать или выкидывать устаревший опыт | `improve_loop._find_stale()` (фильтр по статусу) + `worker.py` авто-decay (RetrievalFeedback unused → hypothesis → deprecated) | ✅ |
+| Забывание и устаревание | Обесценивать или выкидывать устаревший опыт | Семантическое устаревание: `improve_loop._find_stale()` (hypothesis → deprecated по eval-гейту) + проигравшие противоречий. Таймерного decay по неиспользованию нет осознанно (время не делает факт ложным): телеметрия использования — observability, решение за человеком | ✅ |
 | Разрешение противоречий | Новый урок конфликтует со старым — какой победит | `improve_loop._find_contradictions()` + `_pick_winner()`: verified beats hypothesis, больше тегов > меньше, подробнее описание. Автоматическое разрешение | ✅ |
 | Эвалы для изменений поведения | Прежде чем менять — проверить что полезно | `eval_runner.py` — gate перед consolidation/deprecation, метрики coverage/staleness | ✅ |
 | Human-in-the-loop | Человек подтверждает/правит/отклоняет уроки | `gatekeeper.py` + `auto_mode: false` (default) | ✅ |

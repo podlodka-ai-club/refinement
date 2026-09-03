@@ -48,11 +48,6 @@ class TestImproveOutput:
         if "Eval-решения:" in output:
             assert "применено" in output or "отклонено" in output
 
-    def test_contradictions_format(self):
-        output = _improve()
-        if "Противоречия" in output and "⚡" not in output:
-            pass
-
     def test_output_is_valid_string(self):
         output = _improve()
         assert isinstance(output, str)
