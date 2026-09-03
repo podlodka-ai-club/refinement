@@ -416,6 +416,16 @@ def main():
     import sys
     print(f"[curator] MCP server starting: BACKEND={os.getenv('MEMORY_BACKEND', 'local')}", file=sys.stderr)
 
+    # Инвариант: worker жив, пока жив MCP-сервер. opencode стартует сервер —
+    # ensure поднимает мёртвый демон и чистит протухший pid. Выключатель для
+    # окружений, где фоновый процесс нежелателен: CURATOR_AUTO_WORKER=false.
+    if os.getenv("CURATOR_AUTO_WORKER", "true").lower() != "false":
+        try:
+            from curator.daemon import ensure_worker
+            print(f"[curator] worker: {ensure_worker()}", file=sys.stderr)
+        except Exception as e:
+            print(f"[curator] worker ensure не удался: {e}", file=sys.stderr)
+
     async def _run():
         async with stdio_server() as (read_stream, write_stream):
             await app.run(read_stream, write_stream, app.create_initialization_options())

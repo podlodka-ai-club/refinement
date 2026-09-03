@@ -134,21 +134,25 @@ class TestStopPidVerification:
 
     def test_stop_does_not_kill_foreign_process(self, tmp_path, monkeypatch, capsys):
         from curator import control
+        from curator import daemon
 
-        monkeypatch.setattr(control, "PID_FILE", tmp_path / "worker.pid")
-        monkeypatch.setattr(control, "_read_pid", lambda: 1)  # pid 1 = launchd, точно не наш worker
-        monkeypatch.setattr(control, "_is_running", lambda pid: True)
+        monkeypatch.setattr(daemon, "_pid_file", lambda: tmp_path / "worker.pid")
+        monkeypatch.setattr(daemon, "read_pid", lambda: 1)  # pid 1 = launchd, точно не наш worker
+        monkeypatch.setattr(daemon, "is_running", lambda pid: True)
+        killed = []
+        monkeypatch.setattr(daemon.os, "kill", lambda pid, sig: killed.append((pid, sig)))
 
         control.cmd_stop()
 
         out = capsys.readouterr().out
         assert "не похож" in out, "чужой процесс обязан быть распознан и не тронут"
         assert not (tmp_path / "worker.pid").exists()
+        assert killed == []
 
     def test_matches_documented_entrypoint(self, monkeypatch):
-        """`python -m curator.worker` (cmd_start) и `curator-worker`
+        """`python -m curator.worker` (start_worker) и `curator-worker`
         (entrypoint из worker.py) — наши; `rg curator.worker` — чужой."""
-        from curator import control
+        from curator import daemon
 
         def fake_ps(command_line: str):
             def run(cmd, **kwargs):
@@ -157,21 +161,21 @@ class TestStopPidVerification:
                 return R()
             return run
 
-        monkeypatch.setattr(control.subprocess, "run", fake_ps(
+        monkeypatch.setattr(daemon.subprocess, "run", fake_ps(
             "/somewhere/curator-worker --daemon"))
-        assert control._pid_is_curator_worker(42) is True
+        assert daemon.pid_is_curator_worker(42) is True
 
-        monkeypatch.setattr(control.subprocess, "run", fake_ps(
+        monkeypatch.setattr(daemon.subprocess, "run", fake_ps(
             "/usr/bin/python -m curator.worker --daemon"))
-        assert control._pid_is_curator_worker(42) is True
+        assert daemon.pid_is_curator_worker(42) is True
 
-        monkeypatch.setattr(control.subprocess, "run", fake_ps(
+        monkeypatch.setattr(daemon.subprocess, "run", fake_ps(
             "rg curator.worker"))
-        assert control._pid_is_curator_worker(42) is False, "подстрока в чужом argv не матч"
+        assert daemon.pid_is_curator_worker(42) is False, "подстрока в чужом argv не матч"
 
-        monkeypatch.setattr(control.subprocess, "run", fake_ps(
+        monkeypatch.setattr(daemon.subprocess, "run", fake_ps(
             "tail -f /tmp/curator.worker.log"))
-        assert control._pid_is_curator_worker(42) is False
+        assert daemon.pid_is_curator_worker(42) is False
 
 
 class TestSqliteThreadSafety:
