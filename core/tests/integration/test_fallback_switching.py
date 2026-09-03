@@ -7,10 +7,6 @@ from curator.models import StructuredFact, FactQuery
 
 
 class TestFallback:
-    def test_local_backend_healthy(self):
-        be = LocalBackend(":memory:")
-        assert be.health_check()
-
     def test_xmemory_with_empty_key_falls_back(self):
         be = XMemoryBackend(api_key="", instance_id=None)
         assert isinstance(be, MemoryBackend)

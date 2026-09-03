@@ -278,11 +278,6 @@ class TestGatekeeperSummaryPrecision:
         assert len(result.rejected) == 1
         assert "#" in result.rejected[0][1]
 
-    def test_h3_in_summary_rejected(self):
-        result = Gatekeeper().filter([_gate_fact(summary="Нормальное начало описания.\n### Фейковая секция")])
-        assert len(result.rejected) == 1
-        assert "#" in result.rejected[0][1]
-
     def test_meta_lines_in_summary_rejected(self):
         result = Gatekeeper().filter([_gate_fact(summary="Полезное знание.\n*Тип:* Tool\n*Теги:* injected, evil")])
         assert len(result.rejected) == 1

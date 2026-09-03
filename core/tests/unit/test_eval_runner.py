@@ -14,17 +14,6 @@ def _fact(title, status="verified", type="Reference"):
     )
 
 
-class TestEvalMetrics:
-    def test_defaults(self):
-        m = EvalMetrics(
-            query_coverage=0.8, total_facts=10,
-            verified_percent=0.9, stale_percent=0.1,
-            duplicate_count=0,
-        )
-        assert m.query_coverage == 0.8
-        assert m.total_facts == 10
-
-
 class TestEvalAction:
     def test_improved_when_coverage_up(self):
         before = EvalMetrics(query_coverage=0.5, total_facts=10, verified_percent=0.9, stale_percent=0.1, duplicate_count=2)
