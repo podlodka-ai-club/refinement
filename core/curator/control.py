@@ -191,7 +191,7 @@ def cmd_save(auto_yes: bool = False):
 
     _header("Curator Save — кандидаты от агента")
 
-    from curator.models import ProposedFact, StructuredFact, normalize_fact_type, parse_tags
+    from curator.models import ProposedFact, StructuredFact, parse_tags, resolve_fact_type
     proposed = []
     for i, c in enumerate(data, 1):
         title = str(c.get("title", "")).strip() if isinstance(c, dict) else ""
@@ -199,12 +199,21 @@ def cmd_save(auto_yes: bool = False):
         if not title or not summary:
             print(f"  ⚠ Кандидат #{i} некорректен (нет title/content_summary) — пропущен")
             continue
+        fact_type, type_error = resolve_fact_type(
+            str(c.get("type", "Reference")).strip(),
+            new_type=str(c.get("new_type", "")).lower() in ("true", "1", "yes"),
+            type_description=str(c.get("type_description", "") or ""),
+        )
+        if fact_type is None:
+            print(f"  ⚠ Кандидат #{i}: {type_error}")
+            continue
         proposed.append(ProposedFact(
-            type=normalize_fact_type(str(c.get("type", "Reference"))),
+            type=fact_type,
             title=title,
             content_summary=summary,
             tags=parse_tags(c.get("tags")),
             evidence=str(c.get("evidence", "") or ""),
+            source_file=str(c.get("source_file", "") or "").strip() or None,
         ))
 
     if not proposed:

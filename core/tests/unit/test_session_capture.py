@@ -135,3 +135,46 @@ class TestBatchTolerance:
         out = server_mod._session_capture({"candidates": [candidate]})
         assert "Получено кандидатов: 1" in out
         assert "Теги: kotlin, jvm" in out
+
+
+class TestTypeRegistryCapture:
+    """Честный capture: неизвестный тип — отказ со словарём (агент видит
+    семантику и идёт к человеку), new_type с описанием — регистрация.
+    Молчаливый Reference-фолбэк запрещён — это ложь о сохранённом."""
+
+    def _capture(self, candidates, auto_approve=False):
+        from curator.server import _session_capture
+        return _session_capture({"candidates": candidates, "auto_approve": auto_approve})
+
+    def test_unknown_type_rejected_with_dictionary(self, memory_server, tmp_path, monkeypatch):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        out = self._capture([{
+            "type": "Note", "title": "Заметка об инструменте multica",
+            "content_summary": "Наблюдение после недели использования инструмента.",
+            "tags": ["tools"],
+        }])
+        assert "неизвестный тип 'Note'" in out
+        assert "Reference —" in out, "словарь типов с описаниями обязан быть в отказе"
+
+    def test_new_type_registered_and_saved(self, memory_server, tmp_path, monkeypatch):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        out = self._capture([{
+            "type": "Note", "title": "Заметка об инструменте multica",
+            "content_summary": "Наблюдение после недели использования инструмента.",
+            "tags": ["tools"], "new_type": True,
+            "type_description": "Заметки об инструментах: статус, наблюдения после проб",
+        }], auto_approve=True)
+        assert "неизвестный тип" not in out
+        assert "Авто-сохранено: 1" in out
+        facts = memory_server.query_facts(FactQuery())
+        assert facts[0].type == "Note", "тип факта обязан сохраниться как Note"
+        assert (tmp_path / ".curator" / "fact_types.json").exists()
+
+    def test_new_type_without_description_rejected(self, memory_server, tmp_path, monkeypatch):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        out = self._capture([{
+            "type": "Note", "title": "Заметка об инструменте multica",
+            "content_summary": "Наблюдение после недели использования инструмента.",
+            "tags": ["tools"], "new_type": True, "type_description": "",
+        }])
+        assert "описание" in out

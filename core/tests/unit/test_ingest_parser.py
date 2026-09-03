@@ -35,10 +35,20 @@ class TestFrontmatterParsing:
         assert result["type"] is None
         assert result["tags"] == ["a", "b"]
 
-    def test_unknown_type(self):
-        content = "---\ntype: Unknown\ntags: [a]\n---\n\n# Title"
+    def test_any_valid_type_name_accepted(self):
+        """Контракт реестра типов: словарь расширяем, .md — доверенный
+        локальный источник, тип принимается как записан (round-trip
+        кастомных типов)."""
+        content = "---\ntype: Note\ntags: [a]\n---\n\n# Title"
         result = _parse_yaml_frontmatter(content)
-        assert result["type"] is None
+        assert result["type"] == "Note"
+
+    def test_malformed_type_name_rejected(self):
+        """Кривое имя типа (небезопасно для имён файлов/regex) → None."""
+        for bad in ("1bad", "не латиница", "note/type", ""):
+            content = f"---\ntype: {bad}\ntags: [a]\n---\n\n# Title"
+            result = _parse_yaml_frontmatter(content)
+            assert result["type"] is None, bad
 
     def test_empty_file(self):
         result = _parse_yaml_frontmatter("")

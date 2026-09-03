@@ -21,8 +21,9 @@ def _parse_yaml_frontmatter(content: str) -> dict:
 
     result = {"type": None, "tags": []}
 
-    # Extract type: Reference|Style|Tool|Spec
-    m = re.search(r'^type:\s*(Reference|Style|Tool|Spec)\s*$', fm_text, re.MULTILINE)
+    # Тип: любое валидное имя (словарь расширяем через реестр/регистрацию),
+    # обязательная форма ^[A-Za-z][A-Za-z0-9_-]*$ — безопасно для имён файлов
+    m = re.search(r'^type:\s*([A-Za-z][A-Za-z0-9_-]*)\s*$', fm_text, re.MULTILINE)
     if m:
         result["type"] = m.group(1)
 
@@ -46,7 +47,10 @@ def parse_md_file(filepath: Path) -> list[ProposedFact]:
     frontmatter = _parse_yaml_frontmatter(content)
     file_type = frontmatter.get("type", "Reference")
     if isinstance(file_type, str):
-        file_type = file_type if file_type in ("Reference", "Style", "Tool", "Spec") else "Reference"
+        # .md — доверенный локальный источник (его пишет ядро или человек):
+        # тип принимается как записан, без сверки с реестром машины
+        if not re.match(r"^[A-Za-z][A-Za-z0-9_-]*$", file_type):
+            file_type = "Reference"
     file_tags = frontmatter.get("tags", [])
     if isinstance(file_tags, str):
         file_tags = [t.strip() for t in file_tags.split(",")]
@@ -164,10 +168,11 @@ def _extract_tags(section: str) -> list[str]:
 
 def _extract_type(section: str) -> str | None:
     """Тип факта из строки-меты. Рендер пишет `*Тип:* Tool | *Статус:* ...` —
-    берём только точное значение до разделителя, не всю строку."""
+    берём только точное значение до разделителя, не всю строку. Имя — любой
+    валидный идентификатор (словарь типов расширяем)."""
     for line in section.splitlines():
         if line.startswith(META_TYPE_PREFIX):
-            m = re.match(r"\*Тип:\*\s*(Reference|Style|Tool|Spec)", line)
+            m = re.match(r"\*Тип:\*\s*([A-Za-z][A-Za-z0-9_-]*)", line)
             if m:
                 return m.group(1)
             return None
