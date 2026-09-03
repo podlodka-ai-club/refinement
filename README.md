@@ -73,8 +73,10 @@ cd core && .venv/bin/python -m pytest tests/requirements/ -v
 
 ```bash
 git clone https://github.com/podlodka-ai-club/refinement.git
-cd refinement/core
-python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+cd refinement
+./install.sh --opencode      # Windows: install.bat --opencode
+# разработка (тесты):
+cd core && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/python -m pytest tests/ -q --ignore=tests/smoke   # все зелёные
 .venv/bin/curator demo                                       # полный цикл жизни знания
 ```

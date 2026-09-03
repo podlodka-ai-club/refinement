@@ -2,13 +2,17 @@
 
 > Начать использовать сегодня. Без погружения в кишки.
 
-## 0. Установка за 3 команды
+## 0. Установка
 
 ```bash
-git clone <repo> && cd memory-curator/core
-pip install -e ".[dev]"
-curator install --opencode   # или --claude; без флага спросит
+git clone <repo> memory-curator
+cd memory-curator
+./install.sh --opencode      # mac/linux · Windows: install.bat --opencode
 ```
+
+Скрипт сам поставит python-пакет и запустит `curator install` (то же
+руками: `cd core && python -m venv .venv && .venv/bin/pip install -e . &&
+.venv/bin/curator install --opencode`).
 
 Единственный вопрос установки — **куда класть базу знаний** (любой путь,
 по умолчанию `~/memory-curator`; это просто папка с `.md` — можно положить
@@ -18,8 +22,10 @@ curator install --opencode   # или --claude; без флага спросит
 Инсталлер сам впишет в opencode: MCP-сервер (тулзы `curator_*`), все
 команды `/curator-*`, оба скилла (curator-save и mapping-documentation)
 и поднимет worker самоулучшения. Перезапусти opencode — готово.
-`install --claude` — то же для Claude Code: `.mcp.json` в проекте +
-слэш-команды `~/.claude/commands/` + скиллы.
+`--claude` — то же для Claude Code: `.mcp.json` в проекте + слэш-команды
+`~/.claude/commands/` + скиллы.
+
+Разработка (тесты): `pip install -e ".[dev]"` — клиенту `[dev]` не нужен.
 
 ## 1. Первый запуск (TERMINAL)
 

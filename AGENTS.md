@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Memory Curator — агент памяти для AI-харнесов. Python, ядро в `core/`.
+Memory Curator — агент памяти для opencode и Claude Code. Python, ядро в `core/`.
 
 ## Что это
 
@@ -8,8 +8,8 @@ Memory Curator — агент памяти для AI-харнесов. Python, �
 валидацией (gatekeeper), автономно улучшает память (дубликаты → консолидация,
 устаревание → deprecation, противоречия → resolution, eval gate перед
 изменениями) и возвращает знания в `.md` (write-back). Извлечение делает
-агент харнеса — LLM в слое агента, бэкенд LLM-вызовов не содержит
-(контракт `candidates`).
+сам агент — LLM на стороне opencode / Claude Code, бэкенд LLM-вызовов
+не содержит (контракт `candidates`).
 
 ## Как проверить за 2 команды
 

@@ -59,7 +59,7 @@ def _install_skills(dest_root: Path) -> list[Path]:
 
 
 def _commands_source() -> dict:
-    """Команды (/curator-*) из репо — источник правды для обоих харнесов."""
+    """Команды (/curator-*) из репо — источник правды для opencode и Claude Code."""
     path = _repo_root() / "integrations" / "commands.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
