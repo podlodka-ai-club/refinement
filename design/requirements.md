@@ -66,7 +66,7 @@ repo: https://github.com/podlodka-ai-club/refinement
 
 | Блок | Описание | Memory Curator | Статус |
 |------|----------|----------------|--------|
-| Забывание и устаревание | Обесценивать или выкидывать устаревший опыт | `improve_loop._find_stale()` (фильтр по статусу) + `worker.py` авто-decay (RetrievalFeedback unused → hypothesis → deprecated) | ✅ |
+| Забывание и устаревание | Обесценивать или выкидывать устаревший опыт | Семантическое устаревание: `improve_loop._find_stale()` (hypothesis → deprecated по eval-гейту) + проигравшие противоречий. Таймерного decay по неиспользованию нет осознанно (время не делает факт ложным): телеметрия использования — observability, решение за человеком | ✅ |
 | Разрешение противоречий | Новый урок конфликтует со старым — какой победит | `improve_loop._find_contradictions()` + `_pick_winner()`: verified beats hypothesis, больше тегов > меньше, подробнее описание. Автоматическое разрешение | ✅ |
 | Эвалы для изменений поведения | Прежде чем менять — проверить что полезно | `eval_runner.py` — gate перед consolidation/deprecation, метрики coverage/staleness | ✅ |
 | Human-in-the-loop | Человек подтверждает/правит/отклоняет уроки | `gatekeeper.py` + `auto_mode: false` (default) | ✅ |

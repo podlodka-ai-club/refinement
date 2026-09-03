@@ -35,7 +35,8 @@ MCP-сервер / CLI — единый контракт candidates
     └─ improve loop  автономно (worker, раз в сутки):
                     дубликаты → консолидация · stale → deprecation ·
                     противоречия → resolution (verified > hypothesis) ·
-                    авто-decay (unused >30д/90д) · eval gate перед изменениями
+                    телеметрия использования (совет человеку, не приговор) ·
+                    eval gate перед изменениями
 ```
 
 Offline-fallback (UC6): при недоступности xmemory (сеть / VPN / 5xx) записи
@@ -80,8 +81,8 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 `curator demo` прогоняет на изолированной tmp-базе весь жизненный цикл —
 **реальными вызовами** (те же функции, что в проде): кандидаты → gatekeeper
 (7 принято / 3 отклонено с причинами) → write-back в .md → query → improve
-(дубликат консолидирован, противоречие разрешено) → auto-decay → финальный
-статус. `--keep` оставит файлы для осмотра.
+(дубликат консолидирован, противоречие разрешено) → телеметрия (что реально
+читают) → финальный статус. `--keep` оставит файлы для осмотра.
 
 Подключить к своему агенту (opencode): скилл `/curator-save` + MCP-конфиг —
 [docs/getting-started.md](docs/getting-started.md).

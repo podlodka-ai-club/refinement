@@ -102,10 +102,12 @@ class TestDeprecatedLeaveActiveSet:
         assert report.stats["stale_found"] == 0
 
 
-class TestWorkerDecayPreservesProvenance:
-    """Ревью: auto-decay пересобирал StructuredFact без source_file."""
+class TestWorkerNoTimerDecay:
+    """Семантика D (решение после ревью): таймерного decay нет — время не
+    делает факт ложным, вечное редкое знание не гниёт молчанием. Телеметрия
+    остаётся observability, автоматика по ней не действует."""
 
-    def test_decay_keeps_source_file(self, isolated_state):
+    def test_unused_fact_stays_verified(self, isolated_state):
         import curator.worker as worker_mod
 
         be = LocalBackend(":memory:")
@@ -118,10 +120,10 @@ class TestWorkerDecayPreservesProvenance:
         }), encoding="utf-8")
 
         cycle = worker_mod.run_improve_cycle(be, isolated_state / "reports")
-        assert cycle["auto_decay"], "unused > 30д обязан деградировать verified → hypothesis"
+        assert "auto_decay" not in cycle, "таймерный decay выпилен из цикла"
 
         facts = be.query_facts(FactQuery(search="боксинг"))
-        assert facts[0].status == "hypothesis"
+        assert facts[0].status == "verified", "unused > 30д больше не деградирует"
         assert facts[0].source_file == "reference/kotlin.md"
 
 

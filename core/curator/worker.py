@@ -1,7 +1,10 @@
 """Фоновый worker для автономного цикла улучшения.
 
 Запускается через cron или как долгоживущий процесс.
-Периодически запускает improve loop и записывает отчёты.
+Периодически запускает improve loop (дубликаты, противоречия,
+семантическое устаревание hypothesis по eval-гейту) и пишет отчёты.
+Таймерного decay по неиспользованию нет — телеметрия остаётся
+observability для человека, автоматика по ней не действует.
 
 Использование:
     curator-worker                    # однократный запуск
@@ -42,48 +45,16 @@ def run_improve_cycle(backend, report_dir: Path, base_dir: Path | None = None) -
     improve = ImproveLoop(backend)
     report = improve.run()
 
-    from curator.retrieval_feedback import RetrievalFeedback
-    from curator.models import FactQuery
-    from dataclasses import replace
-    fb = RetrievalFeedback()
+    # Таймерного decay НЕТ (осознанно): время не делает факт ложным —
+    # вечное редкое знание (личные правила) не должно гнить молчанием.
+    # Телеметрия использования — observability для человека (curator
+    # feedback / report), автоматика по ней не действует.
 
-    unused_30d = fb.get_unused(30)
-    unused_90d = fb.get_unused(90)
-    auto_deprecated = []
-
-    if unused_30d or unused_90d:
-        all_facts = backend.query_facts(FactQuery())
-        fact_map = {f.title: f for f in all_facts}
-
-        for title in unused_90d:
-            fact = fact_map.get(title)
-            if fact and fact.status == "hypothesis":
-                changed = replace(fact, status="deprecated")
-                backend.store_fact(changed)
-                auto_deprecated.append({"title": title, "from": "hypothesis", "to": "deprecated", "reason": "unused > 90d"})
-
-        for title in unused_30d:
-            fact = fact_map.get(title)
-            if fact and fact.status == "verified":
-                changed = replace(fact, status="hypothesis")
-                backend.store_fact(changed)
-                auto_deprecated.append({"title": title, "from": "verified", "to": "hypothesis", "reason": "unused > 30d"})
-
-    # Жизненный цикл в .md: задеприкейтнутые (improve + decay) → [УСТАРЕЛО],
-    # hypothesis (decay) → перерендер секции. Факты без source_file молча
-    # пропускаются (rewrite_status)
-    changed_for_writeback = list(report.deprecated)
-    if auto_deprecated:
-        all_facts = backend.query_facts(FactQuery())
-        by_title = {f.title: f for f in all_facts}
-        for entry in auto_deprecated:
-            fact = by_title.get(entry["title"])
-            if fact:
-                changed_for_writeback.append(fact)
-    if base_dir is not None and changed_for_writeback:
+    # Жизненный цикл в .md: задеприкейтнутые improve-циклом → [УСТАРЕЛО]
+    if base_dir is not None and report.deprecated:
         from curator.sync_engine import SyncEngine
         sync = SyncEngine(backend, base_dir)
-        for fact in changed_for_writeback:
+        for fact in report.deprecated:
             try:
                 sync.rewrite_status(fact)
             except Exception as e:
@@ -103,7 +74,6 @@ def run_improve_cycle(backend, report_dir: Path, base_dir: Path | None = None) -
             {"title": f.title, "status": f.status}
             for f in report.stale
         ],
-        "auto_decay": auto_deprecated,
     }
 
     if report.metrics_before and report.metrics_after:
@@ -136,8 +106,6 @@ def run_daemon(backend, report_dir: Path, interval_minutes: int):
             print(f"  Фактов: {data['stats']['total_facts']}, "
                   f"дубликатов: {data['stats']['duplicates_found']}, "
                   f"устаревших: {data['stats']['stale_found']}")
-            if data.get("auto_decay"):
-                print(f"  Авто-decay: {len(data['auto_decay'])} фактов (verified→hypothesis / hypothesis→deprecated)")
         except Exception as e:
             print(f"  Ошибка: {e}")
 
