@@ -15,17 +15,48 @@ class SyncEngine:
     def __init__(self, backend: MemoryBackend, base_dir: Path):
         self.backend = backend
         self.base_dir = base_dir
+        # (glob, mode) таргетов карты — лениво, один раз на инстанс
+        self._modes_cache: list[tuple[str, str]] | None = None
+
+    def _map_path(self) -> Path | None:
+        import os
+        env = os.getenv("CURATOR_MAP", "").strip()
+        if env:
+            return Path(env).expanduser()
+        candidate = self.base_dir / "DOCUMENTATION-MAP.md"
+        return candidate if candidate.exists() else None
+
+    def _mode_for(self, source_file: str) -> str:
+        """mode таргета карты для пути (update/append/readonly); нет карты
+        или матча — update (текущее поведение)."""
+        if self._modes_cache is None:
+            map_path = self._map_path()
+            if map_path is None:
+                self._modes_cache = []
+            else:
+                from curator.routing.map_router import target_modes
+                self._modes_cache = target_modes(map_path)
+        import fnmatch
+        for pattern, mode in self._modes_cache:
+            if fnmatch.fnmatch(source_file, pattern):
+                return mode
+        return "update"
 
     def write_fact_to_md(self, fact: StructuredFact) -> Path:
         if not fact.source_file:
             raise ValueError("Fact has no source_file")
+        mode = self._mode_for(fact.source_file)
+        if mode == "readonly":
+            # Карта запрещает запись в этот таргет («использовать только как
+            # контекст») — честный отказ, capture покажет ⚠
+            raise ValueError(f"таргет readonly: {fact.source_file} — запись в .md запрещена картой")
         md_path = self._resolve_md_path(fact.source_file)
         md_path.parent.mkdir(parents=True, exist_ok=True)
 
         if not md_path.exists():
             md_path.write_text(self._render_fact(fact), encoding="utf-8")
         else:
-            self._upsert_fact_in_md(md_path, fact)
+            self._upsert_fact_in_md(md_path, fact, mode)
 
         self._rebuild_index()
         return md_path
@@ -85,12 +116,16 @@ class SyncEngine:
             f"*Файл:* {fact.source_file}\n"
         )
 
-    def _upsert_fact_in_md(self, md_path: Path, fact: StructuredFact) -> None:
+    def _upsert_fact_in_md(self, md_path: Path, fact: StructuredFact, mode: str = "update") -> None:
         content = md_path.read_text(encoding="utf-8")
         lines = content.split("\n")
         idx = self._find_fact_section(lines, fact.title)
 
         if idx is not None:
+            if mode == "append":
+                # append: «добавлять запись, сохраняя историю» — существующую
+                # секцию не перезаписываем
+                return
             rendered = self._render_fact(fact).rstrip("\n").split("\n")
             lines[idx:self._content_end(lines, idx)] = rendered
             self._write_lines(md_path, lines)
