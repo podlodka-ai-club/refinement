@@ -304,3 +304,65 @@ class TestRewriteStatus:
         engine = SyncEngine(be, tmp_path)
 
         assert engine.rewrite_status(self._fact(status="deprecated")) is None
+
+
+class TestIndexRegeneration:
+    """index.md пересобирается после записей: живые факты по файлам.
+    Чужой index.md (без маркера) не трогается; index не инжестится как факты."""
+
+    def _fact(self, title, source_file="session/reference.md", status="verified"):
+        return StructuredFact(
+            type="Reference", title=title, tags=["test"], status=status,
+            content_summary="Достаточно длинная сводка факта для секции.",
+            source_file=source_file,
+        )
+
+    def test_index_created_with_marker(self, tmp_path):
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, tmp_path)
+        engine.write_fact_to_md(self._fact("Первое правило про индекс"))
+
+        index = tmp_path / "index.md"
+        assert index.exists()
+        text = index.read_text(encoding="utf-8")
+        assert SyncEngine.INDEX_MARKER in text
+        assert "## session/reference.md" in text
+        assert "- [Первое правило про индекс](session/reference.md)" in text
+
+    def test_index_updated_and_deprecated_removed(self, tmp_path):
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, tmp_path)
+        fact = self._fact("Второе правило про индекс")
+        engine.write_fact_to_md(fact)
+
+        engine.rewrite_status(self._fact("Второе правило про индекс", status="deprecated"))
+
+        text = (tmp_path / "index.md").read_text(encoding="utf-8")
+        assert "Второе правило про индекс" not in text, \
+            "устаревший факт уходит из навигации"
+
+    def test_foreign_index_untouched(self, tmp_path):
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, tmp_path)
+        (tmp_path / "index.md").write_text(
+            "# Knowledge Base\n\n- [Reference](reference/index.md) — ручная навигация\n",
+            encoding="utf-8",
+        )
+
+        engine.write_fact_to_md(self._fact("Третье правило про индекс"))
+
+        text = (tmp_path / "index.md").read_text(encoding="utf-8")
+        assert "ручная навигация" in text, "чужой index.md нельзя перезаписывать"
+        assert "Третье правило" not in text
+
+    def test_index_not_ingested_as_facts(self, tmp_path):
+        from curator.analyzers.ingest import ingest_directory
+        from curator.gatekeeper import Gatekeeper
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, tmp_path)
+        engine.write_fact_to_md(self._fact("Четвёртое правило про индекс"))
+
+        be2 = LocalBackend(":memory:")
+        saved = ingest_directory(tmp_path, be2, Gatekeeper(be2, check_duplicates=False))
+
+        assert saved == 1, "index.md не должен превращаться в факты"

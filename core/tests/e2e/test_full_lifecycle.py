@@ -19,6 +19,7 @@ from curator.backend.local import LocalBackend
 from curator.gatekeeper import Gatekeeper
 from curator.improve_loop import ImproveLoop
 from curator.models import FactQuery, StructuredFact
+from curator.sync_engine import SyncEngine
 from curator.retrieval_feedback import RetrievalFeedback
 
 A_TITLE = "Правило про kotlin inline классы и sealed interface"
@@ -142,6 +143,14 @@ class TestDeclaredLifecycle:
         assert rebuilt[A_TITLE].tags == ["kotlin"]
         assert rebuilt[STYLE_TITLE].type == "Style"
 
+        # ---- Шаг 5: навигация: автогенерируемый index.md отражает живое
+        index = (md_dir / "index.md").read_text(encoding="utf-8")
+        assert SyncEngine.INDEX_MARKER in index
+        assert f"- [{A_TITLE}](session/reference.md)" in index
+        assert f"- [{WINNER_TITLE}](session/reference.md)" in index
+        assert f"- [{STYLE_TITLE}](session/style.md)" in index
+        assert B_TITLE not in index, "устаревшие не попадают в навигацию"
+
 
 class TestDecayByUsage:
     """Заявка «устаревание по использованию»: 30д без запросов →
@@ -166,7 +175,6 @@ class TestDecayByUsage:
                                       source_file="session/reference.md")
         for f in (fact_recent, fact_old_hyp):
             be.store_fact(f)
-            from curator.sync_engine import SyncEngine
             SyncEngine(be, md_dir).write_fact_to_md(f)
 
         # usage-сид: fresh не запрашивали 40 дней, old — 100 дней
