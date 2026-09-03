@@ -36,6 +36,23 @@ MEMORY_BACKEND=local curator start
 Бесшовная миграция: вместо `/save-knowledge` → `/curator-save`. Под капотом — MCP-сервер.
 Извлечение делает сам агент (он LLM), бэкенд управляет данными — LLM-вызовов в сервере нет.
 
+Скилл `.agents/skills/curator-save/` добавляет проактивный триггер: агент
+сам предлагает сохранить проверенное знание по ходу сессии. Подключение в
+opencode — симлинком: `ln -s <repo>/.agents/skills/curator-save
+~/.config/opencode/skills/curator-save`.
+
+## 2а. Claude Code
+
+`integrations/claude-code/` — `.mcp.json` (MCP-сервер), скилл и инструкция
+подключения за 3 шага: [README](../integrations/claude-code/README.md).
+
+## 2б. Демонстрация заявленного
+
+E2E-сценарий `core/tests/e2e/test_full_lifecycle.py` — связный прогон всей
+заявки (capture с мусором, upsert, query, improve с eval-гейтом, жизненный
+цикл в .md, rebuild, decay, offline-fallback): полный скрипт демо. Прогон с
+выводом: `pytest tests/e2e/test_full_lifecycle.py -v`.
+
 ## 3. Все команды (TERMINAL)
 
 | Команда | Что делает |
