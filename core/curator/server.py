@@ -24,7 +24,10 @@ from mcp.types import (
     ListToolsRequest, CallToolResult,
 )
 
-from curator.models import StructuredFact, ProposedFact, FactQuery, parse_tags
+from curator.models import (
+    StructuredFact, ProposedFact, FactQuery, parse_tags,
+    get_fact_types, resolve_fact_type,
+)
 from curator.backend.interface import MemoryBackend
 from curator.backend.local import LocalBackend
 from pydantic import BaseModel, ConfigDict
@@ -46,11 +49,7 @@ def _get_backend() -> MemoryBackend:
         return LocalBackend(db_path)
 
 
-_FACT_TYPES = ("Reference", "Style", "Tool", "Spec")
-
-
-def _fact_type(raw: str) -> str:
-    return raw if raw in _FACT_TYPES else "Reference"
+_FACT_TYPES_DOC = "тип факта — известные типы с описаниями: см. curator_status; новый тип только после подтверждения человеком (new_type=true + type_description)"
 
 
 def _as_bool(value) -> bool:
@@ -81,15 +80,21 @@ async def handle_list_tools(ctx, request):
                 "properties": {
                     "candidates": {
                         "type": "array",
-                        "description": "Кандидаты: [{type: Reference|Style|Tool|Spec, title, content_summary, tags: [], evidence}]",
+                        "description": ("Кандидаты: [{type, title, content_summary, tags: [], evidence, "
+                                         "source_file (опционально: путь .md внутри базы, предложенный агентом/скиллом), "
+                                         "new_type (опционально: true если пользователь подтвердил новый тип), "
+                                         "type_description (описание нового типа, обязательно при new_type)}]"),
                         "items": {
                             "type": "object",
                             "properties": {
-                                "type": {"type": "string", "enum": ["Reference", "Style", "Tool", "Spec"]},
+                                "type": {"type": "string", "description": _FACT_TYPES_DOC},
                                 "title": {"type": "string"},
                                 "content_summary": {"type": "string"},
                                 "tags": {"type": "array", "items": {"type": "string"}},
                                 "evidence": {"type": "string"},
+                                "source_file": {"type": "string", "description": "path внутри CURATOR_BASE_DIR (не absolute, без ..)"},
+                                "new_type": {"type": "boolean", "description": "пользователь подтвердил заведение нового типа"},
+                                "type_description": {"type": "string", "description": "что значит новый тип — контракт для агента"},
                             },
                             "required": ["type", "title", "content_summary", "tags"],
                         },
@@ -205,12 +210,24 @@ def _session_capture(args: dict) -> str:
         if not summary:
             errors.append(f"{i}: нет content_summary")
             continue
+        # Тип: известный / новый с подтверждением человека / отказ со словарём.
+        # Молчаливый фолбэк на Reference — ложь о сохранённом, запрещён.
+        fact_type, type_error = resolve_fact_type(
+            str(c.get("type", "Reference")).strip(),
+            new_type=_as_bool(c.get("new_type", False)),
+            type_description=str(c.get("type_description", "") or ""),
+        )
+        if fact_type is None:
+            errors.append(f"{i}: {type_error}")
+            continue
+        source_file = str(c.get("source_file", "") or "").strip() or None
         proposed.append(ProposedFact(
-            type=_fact_type(str(c.get("type", "Reference"))),
+            type=fact_type,
             title=title,
             content_summary=summary,
             tags=parse_tags(c.get("tags")),
             evidence=str(c.get("evidence", "") or ""),
+            source_file=source_file,
         ))
 
     from curator import server_log
@@ -334,7 +351,11 @@ def _status() -> str:
         f"Всего фактов: {len(all_facts)}",
         f"По типам: {json.dumps(by_type, ensure_ascii=False)}",
         f"По статусам: {json.dumps(by_status, ensure_ascii=False)}",
+        "",
+        "Типы (словарь для агента):",
     ]
+    for name, description in get_fact_types().items():
+        lines.append(f"  {name} — {description}")
     return "\n".join(lines)
 
 

@@ -109,6 +109,14 @@ class TestDeclaredLifecycle:
         assert {s["title"] for s in stats} == {A_TITLE, B_TITLE}
         assert all(s["count"] == 1 for s in stats)
 
+        # ---- Шаг 2а: наблюдаемость (сохранённое видно через тулзы)
+        out = server_mod._status()
+        assert "Всего фактов: 5" in out, "status отражает то, что сохранили"
+        assert "Типы (словарь для агента):" in out
+        assert "Reference —" in out, "описания типов — контракт для агента"
+        out = server_mod._feedback()
+        assert "kotlin" in out or A_TITLE in out, "телеметрия запросов живая"
+
         # ---- Шаг 3: improve — дубликат консолидирован (eval-гейт одобрил:
         # покрытие запросов не упало), противоречие разрешено, .md отражает
         out = server_mod._improve()
@@ -282,3 +290,80 @@ class TestOfflineOutbox:
         assert Handler.received[0]["path"] == "/instances/inst-42/write"
         assert Handler.received[0]["auth"] == "Bearer test-key"
         assert "Факт переживший недоступность xmemory" in Handler.received[0]["body"]["text"]
+
+
+class TestMapRoutingE2E:
+    """Сквозная интеграция с картой участника 1: capture → MapRouter →
+    таргеты карты, mode в write-back (readonly — честный ⚠), routes
+    показывает темы, OKF-тип факта не мутируется маршрутизацией."""
+
+    def test_capture_routes_via_map(self, tmp_path, monkeypatch):
+        home = tmp_path
+        md_dir = home / "learnings"
+        md_dir.mkdir()
+        (md_dir / "DOCUMENTATION-MAP.md").write_text(
+            "---\n"
+            "status: draft\n"
+            "categories: [knowledge, rules, records]\n"
+            "modes: [update, append, readonly]\n"
+            "on_unmatched: report\n"
+            "topics:\n"
+            "  - name: kotlin\n"
+            "    watch_for: знания о kotlin\n"
+            "    targets:\n"
+            "      - path: docs/kotlin.md\n"
+            "        captures: [knowledge]\n"
+            "        mode: update\n"
+            "  - name: journal\n"
+            "    watch_for: исторические записи\n"
+            "    targets:\n"
+            "      - path: docs/journal.md\n"
+            "        captures: [records]\n"
+            "        mode: append\n"
+            "  - name: context\n"
+            "    watch_for: только контекст\n"
+            "    targets:\n"
+            "      - path: docs/context.md\n"
+            "        captures: [knowledge]\n"
+            "        mode: readonly\n"
+            "---\n",
+            encoding="utf-8",
+        )
+
+        be = LocalBackend(str(home / "db" / "knowledge.db"))
+        server_mod = _wire_server(monkeypatch, be, md_dir, home / "usage.json")
+        from curator.routing.map_router import MapRouter
+        monkeypatch.setattr(server_mod, "router", MapRouter(md_dir / "DOCUMENTATION-MAP.md"))
+
+        candidates = [
+            {"type": "Reference", "title": "Правило про kotlin inline классы и sealed",
+             "content_summary": "JvmInline внутри sealed interface боксируется всегда.",
+             "tags": ["kotlin"]},
+            {"type": "Spec", "title": "Решение журнала про стек тестирования",
+             "content_summary": "Историческое решение: выбираем junit5 для новых модулей.",
+             "tags": ["journal"]},
+            {"type": "Reference", "title": "Контекстный факт readonly таргета",
+             "content_summary": "Этот факт попадает в readonly таргет и не пишется в .md.",
+             "tags": ["context"]},
+        ]
+        out = server_mod._session_capture({"candidates": candidates, "auto_approve": True})
+
+        assert "Авто-сохранено: 3" in out
+        assert "readonly" in out, "readonly — видимый отказ записи в .md, не молчание"
+
+        by_title = {f.title: f for f in be.query_facts(FactQuery())}
+        assert by_title["Правило про kotlin inline классы и sealed"].source_file == "docs/kotlin.md"
+        assert by_title["Решение журнала про стек тестирования"].source_file == "docs/journal.md"
+        # OKF-инвариант: карта решает только путь, тип факта не мутируется
+        assert by_title["Правило про kotlin inline классы и sealed"].type == "Reference"
+        assert by_title["Решение журнала про стек тестирования"].type == "Spec"
+
+        assert (md_dir / "docs" / "kotlin.md").exists()
+        assert (md_dir / "docs" / "journal.md").exists()
+        assert not (md_dir / "docs" / "context.md").exists(), "readonly не пишет .md"
+
+        # routes: темы карты с mode видны до сохранения
+        out = server_mod._routes()
+        assert "docs/kotlin.md (mode: update)" in out
+        assert "docs/journal.md (mode: append)" in out
+        assert "kotlin" in out

@@ -396,3 +396,84 @@ class TestSymlinkEscape:
 
         assert not (outside_dir / "target.md").exists(), \
             "ни одного байта за пределами sandbox"
+
+
+class TestMapModeWriteBack:
+    """mode таргетов карты управляет write-back: update — upsert,
+    append — не перезаписывать существующее, readonly — честный отказ."""
+
+    def _map(self, tmp_path, body):
+        (tmp_path / "DOCUMENTATION-MAP.md").write_text(
+            "---\n"
+            "status: draft\n"
+            "categories: [knowledge, rules, records]\n"
+            "modes: [update, append, readonly]\n"
+            f"topics:\n{body}"
+            "---\n",
+            encoding="utf-8",
+        )
+
+    def _fact(self, title, source_file, status="verified"):
+        return StructuredFact(
+            type="Reference", title=title, tags=["test"], status=status,
+            content_summary="Достаточно длинная сводка факта для секции.",
+            source_file=source_file,
+        )
+
+    def test_readonly_rejected(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CURATOR_MAP", raising=False)
+        self._map(tmp_path, (
+            "  - name: context\n"
+            "    targets:\n"
+            "      - path: docs/context.md\n"
+            "        mode: readonly\n"
+        ))
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, tmp_path)
+        with pytest.raises(ValueError, match="readonly"):
+            engine.write_fact_to_md(self._fact("Факт в readonly контексте", "docs/context.md"))
+
+    def test_append_never_overwrites(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CURATOR_MAP", raising=False)
+        self._map(tmp_path, (
+            "  - name: journal\n"
+            "    targets:\n"
+            "      - path: docs/journal.md\n"
+            "        mode: append\n"
+        ))
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, tmp_path)
+        fact = self._fact("Запись в журнале первая", "docs/journal.md")
+        engine.write_fact_to_md(fact)
+
+        # перезапись существующей секции запрещена — «сохраняя историю»
+        changed = self._fact("Запись в журнале первая", "docs/journal.md", status="deprecated")
+        engine.write_fact_to_md(changed)
+
+        text = (tmp_path / "docs" / "journal.md").read_text(encoding="utf-8")
+        assert "*Статус:* Подтверждено" in text, "append не перезаписывает существующую секцию"
+
+    def test_update_upserts_as_before(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CURATOR_MAP", raising=False)
+        self._map(tmp_path, (
+            "  - name: living\n"
+            "    targets:\n"
+            "      - path: docs/living.md\n"
+            "        mode: update\n"
+        ))
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, tmp_path)
+        fact = self._fact("Живое правило про обновление", "docs/living.md")
+        engine.write_fact_to_md(fact)
+        engine.write_fact_to_md(self._fact("Живое правило про обновление", "docs/living.md", status="hypothesis"))
+
+        text = (tmp_path / "docs" / "living.md").read_text(encoding="utf-8")
+        assert "*Статус:* Гипотеза" in text, "update — прежний upsert"
+
+    def test_no_map_update_default(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CURATOR_MAP", raising=False)
+        be = LocalBackend(":memory:")
+        engine = SyncEngine(be, tmp_path)
+        fact = self._fact("Обычный факт без карты", "session/reference.md")
+        engine.write_fact_to_md(fact)
+        assert (tmp_path / "session" / "reference.md").exists()

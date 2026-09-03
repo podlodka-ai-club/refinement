@@ -46,7 +46,21 @@ opencode — симлинком: `ln -s <repo>/.agents/skills/curator-save
 `integrations/claude-code/` — `.mcp.json` (MCP-сервер), скилл и инструкция
 подключения за 3 шага: [README](../integrations/claude-code/README.md).
 
-## 2б. Демонстрация заявленного
+## 2б. Маршрутизация по карте документации (MapRouter)
+
+Ядро умеет читать карту формата скилла mapping-documentation (темы →
+таргеты, mode update/append/readonly):
+
+```bash
+# карта: <base_dir>/DOCUMENTATION-MAP.md (или env CURATOR_MAP)
+ROUTER_CLASS=curator.routing.map_router.MapRouter curator-mcp-server
+```
+
+Порядок решения: путь от агента (скилл разрулил glob) → теги ∩ токены
+имени темы → явное `types:` темы → нет матча: report + дефолт.
+Подробности и мнения: [design/integration-map-router.md](../design/integration-map-router.md).
+
+## 2в. Демонстрация заявленного
 
 E2E-сценарий `core/tests/e2e/test_full_lifecycle.py` — связный прогон всей
 заявки (capture с мусором, upsert, query, improve с eval-гейтом, жизненный
