@@ -126,10 +126,10 @@ title, ретраи по записям. 4xx — ошибка запроса, д
 | **LocalBackend (SQLite)** | То же самое, локально: персистентный файл + offline-outbox | Пишем |
 | **Curator: Ingest** | Парсинг .md → список фактов (детерминированный regex-парсер) | Пишем |
 | **Curator: Gatekeeper** | Фильтрация фактов: абстрактность, проверенность, dedup | Пишем |
-| **Извлечение из сессий** | Агент харнеса (opencode/скилл) — вне ядра, передаёт candidates | Скилл-слой |
+| **Извлечение из сессий** | Сам агент (opencode/скилл) — вне ядра, передаёт candidates | Скилл-слой |
 | **Curator: Sync Engine** | Write-back фактов в .md | Пишем |
 | **Curator: Improve Loop** | Консолидация, поиск устаревших, обратная связь по использованию | Пишем (cron/worker.py) |
-| **MCP Server + CLI** | Единый контракт candidates для харнесов и терминала | Пишем (Python MCP) |
+| **MCP Server + CLI** | Единый контракт candidates для opencode/Claude Code и терминала | Пишем (Python MCP) |
 
 ### Memory Backend Interface
 
@@ -234,7 +234,7 @@ relations:
 └───────────┬─────────────┘
             ▼
 ┌─────────────────────────┐
-│ Агент харнеса (LLM)     │
+│ Агент (LLM)             │
 │ 1. Извлекает кандидатов │
 │    из текущей сессии    │
 │ 2. Self-review:         │
@@ -346,7 +346,7 @@ IMPROVE_INTERVAL_MINUTES=1440 curator-worker --daemon
 curator-worker --watch ~/Documents/AI/personal/learnings/
 ```
 
-Worker не зависит от агентов харнесов (opencode и др.) — работает автономно через нашего MemoryBackend.
+Worker не зависит от агентов (opencode и др.) — работает автономно через нашего MemoryBackend.
 
 ### Ingest (внутренний механизм)
 
@@ -456,7 +456,7 @@ Curator поддерживает два режима, переключаемых
 | Memory (primary) | xmemory (REST, SaaS) |
 | Memory (fallback) | SQLite (LocalBackend) + offline-outbox |
 | MCP server | Python MCP SDK (`mcp` package) |
-| Извлечение знаний | Агент харнеса (LLM в слое агента, не в бэкенде) |
+| Извлечение знаний | Сам агент (LLM на стороне opencode / Claude Code, не в бэкенде) |
 | Routing | Router Protocol (extensible, DefaultRouter из коробки) |
 | Background agent | cron worker (`worker.py --daemon`) |
 | .md sync | Git (существующие файлы) |

@@ -1,10 +1,10 @@
-"""Установщик Memory Curator в харнесы: opencode / claude.
+"""Установщик Memory Curator: opencode / Claude Code.
 
 Одна команда вместо пяти ручных шагов:
 
     curator install --opencode   # MCP-секция в конфиг opencode + скилл + worker
     curator install --claude     # .mcp.json в проекте + скилл
-    curator install              # спросит, какой харнес
+    curator install              # спросит: opencode или Claude Code
 
 Идемпотентно: повторный запуск обновляет секцию memory-curator,
 остальной конфиг пользователя не трогает.

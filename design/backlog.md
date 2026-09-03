@@ -27,7 +27,7 @@
 
 ## Прочее
 
-- [ ] Склейка `session_reader` → `curator save --session N` (реальная сессия из opencode.db без харнеса).
+- [ ] Склейка `session_reader` → `curator save --session N` (реальная сессия из opencode.db без агента).
 - [ ] Per-fact approve (выбор номеров) и редактирование кандидатов до сохранения.
 - [ ] Auto-trigger после сессии (opencode hooks) — «извлечение работает автоматом, я о нём не думаю».
 - [ ] Project-scoping фактов (поле project) и created_by в StructuredFact.
