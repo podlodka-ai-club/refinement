@@ -84,7 +84,7 @@
 | `eval_runner.py` | Перед применением улучшения — проверяет метрики | `pytest tests/unit/test_eval_runner.py -v` |
 | `observability.py` | JSONL лог: «когда, что, почему, eval до/после» | `cat ~/.curator/improve_events.jsonl` |
 | `retrieval_feedback.py` | Считает сколько раз каждый факт запрашивали | `pytest tests/unit/test_retrieval_feedback.py -v` |
-| `worker.py` | Автономный демон: раз в сутки improve + авто-decay | `MEMORY_BACKEND=local .venv/bin/curator status` |
+| `worker.py` | Автономный демон: раз в сутки improve + телеметрия | `MEMORY_BACKEND=local .venv/bin/curator status` |
 
 ### 🖥️ Интерфейсы наружу
 
