@@ -316,7 +316,7 @@ def cmd_demo():
 
 
 def cmd_install():
-    """Установить Memory Curator: opencode или Claude Code (MCP + скилл + worker)."""
+    """Установить Memory Curator: opencode или Claude Code (MCP + команды + скиллы + worker)."""
     _header("Curator Install")
     from curator import installer
 
@@ -332,11 +332,24 @@ def cmd_install():
         answer = input("  Выбор [1/2]: ").strip()
         target = "claude" if answer == "2" else "opencode"
 
-    if target == "opencode":
-        steps = installer.install_opencode()
-    else:
-        steps = installer.install_claude()
+    base_dir = None
+    if "--base-dir" in args:
+        idx = args.index("--base-dir")
+        if idx + 1 < len(args):
+            base_dir = args[idx + 1]
+    if base_dir is None:
+        # Единственный вопрос установки: база может лежать где угодно —
+        # это просто папка с .md (можно внутри репо проекта, чтобы жила в гите)
+        print("\n  Куда класть базу знаний? Может быть любой путь —")
+        print("  факты и .md лягут туда (папка создастся при первом сохранении).")
+        answer = input(f"  Путь [{installer.default_base_dir()}]: ").strip()
+        base_dir = answer or installer.default_base_dir()
+
     print()
+    if target == "opencode":
+        steps = installer.install_opencode(base_dir=base_dir)
+    else:
+        steps = installer.install_claude(base_dir=base_dir)
     for step in steps:
         print(f"  {step}")
 

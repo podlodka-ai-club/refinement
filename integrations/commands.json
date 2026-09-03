@@ -1,0 +1,38 @@
+{
+  "curator-save": {
+    "description": "Сохранить знания из текущей сессии в базу знаний",
+    "template": "Сохрани знания из текущей сессии через Memory Curator (MCP-сервер memory-curator, тул curator_session_capture). Следуй скиллу curator-save.\n\n1. Извлеки абстрактные проверенные знания: правила, паттерны, принципы. НЕ бери фичевые детали, конкретные баги, неподтверждённые гипотезы. Для каждого: type, title, content_summary (1-2 предложения), tags, evidence (цитата из сессии). Типы и их описания — curator_status; новый тип только после подтверждения пользователем (new_type=true + type_description).\n2. Self-review: вызови curator_query с релевантными ключевыми словами и убери кандидатов, которые уже есть в базе.\n3. Вызови curator_session_capture с параметром candidates — JSON-массив кандидатов.\n4. Покажи пользователю preview: одобренные (с типом, сводкой, тегами) и отклонённые (с причинами). Спроси подтверждение — все, выборочно (номера) или отказ.\n5. После подтверждения вызови curator_session_capture повторно с выбранными candidates и auto_approve=true."
+  },
+  "curator-create-map": {
+    "description": "Построить карту документации проекта (вызов скилла mapping-documentation) и подключить маршрутизацию по ней",
+    "template": "Построй карту документации текущего проекта, следуя скиллу mapping-documentation (его SKILL.md): определи корпус документации, следуй его правилам исследования и синтеза. Границы поиска и путь сохранения карты спроси у пользователя — предложи файл DOCUMENTATION-MAP.md внутри базы знаний Memory Curator (путь базы — env CURATOR_BASE_DIR, посмотреть можно в конфиге mcp.memory-curator). После сохранения карты маршрутизация фактов по её темам включится автоматически (ROUTER_CLASS уже настроен)."
+  },
+  "curator-status": {
+    "description": "Статистика базы знаний: факты, типы, статусы",
+    "template": "Вызови mcp_memory-curator_curator_status и покажи результат"
+  },
+  "curator-report": {
+    "description": "Полный отчёт: факты + топ запросов",
+    "template": "Вызови mcp_memory-curator_curator_status, затем mcp_memory-curator_curator_feedback"
+  },
+  "curator-query": {
+    "description": "Поиск фактов в базе знаний по ключевым словам",
+    "template": "Вызови mcp_memory-curator_curator_query с параметром search='$ARGUMENTS' и покажи результат"
+  },
+  "curator-start": {
+    "description": "Запустить фоновый worker (улучшение памяти раз в сутки)",
+    "template": "Запусти в терминале команду `curator start` (CLI memory-curator) и покажи результат. Если `curator` не найдена — путь к CLI рядом с curator-mcp-server из конфига opencode (секция mcp.memory-curator)."
+  },
+  "curator-stop": {
+    "description": "Остановить фоновый worker",
+    "template": "Запусти в терминале команду `curator stop` (CLI memory-curator) и покажи результат. Если `curator` не найдена — путь к CLI рядом с curator-mcp-server из конфига opencode (секция mcp.memory-curator)."
+  },
+  "curator-worker": {
+    "description": "Статус worker + статистика базы (curator status)",
+    "template": "Запусти в терминале команду `curator status` (CLI memory-curator) и покажи результат. Если `curator` не найдена — путь к CLI рядом с curator-mcp-server из конфига opencode (секция mcp.memory-curator)."
+  },
+  "curator-full": {
+    "description": "Полный отчёт за всё время: факты + топ запросов + improve лог",
+    "template": "Запусти в терминале команду `curator report` (CLI memory-curator) и покажи результат. Если `curator` не найдена — путь к CLI рядом с curator-mcp-server из конфига opencode (секция mcp.memory-curator)."
+  }
+}
