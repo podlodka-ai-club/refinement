@@ -2,7 +2,7 @@
 
 > Начать использовать сегодня. Без погружения в кишки.
 
-## 0. Установка за 3 команды (в харнес)
+## 0. Установка за 3 команды
 
 ```bash
 git clone <repo> && cd memory-curator/core
@@ -10,9 +10,10 @@ pip install -e ".[dev]"
 curator install --opencode   # или --claude; без флага спросит
 ```
 
-`install` сам впишет MCP-сервер в конфиг харнеса (аккуратный merge — твой
-конфиг не трогает), поставит скилл curator-save и поднимет worker
-самоулучшения. Перезапусти харнес — готово.
+`install --opencode` впишет MCP-сервер в конфиг opencode
+(`~/.config/opencode/opencode.json`), поставит скилл curator-save и поднимет
+worker самоулучшения. После установки перезапусти opencode — готово.
+`install --claude` — то же для Claude Code: `.mcp.json` в проекте + скилл.
 
 ## 1. Первый запуск (TERMINAL)
 

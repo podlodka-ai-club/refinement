@@ -316,7 +316,7 @@ def cmd_demo():
 
 
 def cmd_install():
-    """Установить Memory Curator в харнес: MCP + скилл + worker."""
+    """Установить Memory Curator: opencode или Claude Code (MCP + скилл + worker)."""
     _header("Curator Install")
     from curator import installer
 
@@ -326,9 +326,9 @@ def cmd_install():
     elif "--claude" in args:
         target = "claude"
     else:
-        print("  Какой харнес ставим?")
+        print("  Куда ставим?")
         print("  1) opencode")
-        print("  2) claude")
+        print("  2) Claude Code")
         answer = input("  Выбор [1/2]: ").strip()
         target = "claude" if answer == "2" else "opencode"
 
@@ -499,7 +499,7 @@ def main():
         print("  curator improve           — ручной improve цикл")
         print("  curator routes            — правила маршрутизации")
         print("  curator sync              — пуш offline-outbox в xmemory")
-        print("  curator install [--opencode|--claude] — установить в харнес (MCP + скилл + worker)")
+        print("  curator install [--opencode|--claude] — установить в opencode / Claude Code (MCP + скилл + worker)")
         print("  curator demo [--keep] [--backend xmemory] — тур: полный цикл жизни знания")
         print()
         print("Конфигурация: MEMORY_BACKEND, IMPROVE_INTERVAL_MINUTES, XMEMORY_API_KEY")

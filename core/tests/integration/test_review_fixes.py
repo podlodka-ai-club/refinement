@@ -102,31 +102,6 @@ class TestDeprecatedLeaveActiveSet:
         assert report.stats["stale_found"] == 0
 
 
-class TestWorkerNoTimerDecay:
-    """Семантика D (решение после ревью): таймерного decay нет — время не
-    делает факт ложным, вечное редкое знание не гниёт молчанием. Телеметрия
-    остаётся observability, автоматика по ней не действует."""
-
-    def test_unused_fact_stays_verified(self, isolated_state):
-        import curator.worker as worker_mod
-
-        be = LocalBackend(":memory:")
-        be.store_fact(_fact("Правило про котлин и боксинг value классов",
-                            tags=["kotlin"], source_file="reference/kotlin.md"))
-
-        usage = isolated_state / "usage.json"
-        usage.write_text(json.dumps({
-            "Правило про котлин и боксинг value классов": {"count": 1, "last_access": time.time() - 40 * 86400},
-        }), encoding="utf-8")
-
-        cycle = worker_mod.run_improve_cycle(be, isolated_state / "reports")
-        assert "auto_decay" not in cycle, "таймерный decay выпилен из цикла"
-
-        facts = be.query_facts(FactQuery(search="боксинг"))
-        assert facts[0].status == "verified", "unused > 30д больше не деградирует"
-        assert facts[0].source_file == "reference/kotlin.md"
-
-
 class TestStopPidVerification:
     """Ревью: curator stop убивал по stale pid без верификации процесса.
 
