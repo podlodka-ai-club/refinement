@@ -51,8 +51,8 @@ repo: https://github.com/podlodka-ai-club/refinement
 
 | # | Требование | Memory Curator | Статус |
 |---|-----------|----------------|--------|
-| 1 | Обрабатывать поток задач из выбранного источника | `.md` файлы в `learnings/` (ingest) + сессии харнесов (candidates от агента) | ✅ |
-| 2 | Цикл «выполнил → оценил → извлёк урок» | Агент харнеса извлекает → `curator_session_capture(candidates)` → `gatekeeper.py` → backend (xmemory/SQLite) → `improve_loop.py` | ✅ |
+| 1 | Обрабатывать поток задач из выбранного источника | `.md` файлы в `learnings/` (ingest) + сессии opencode / Claude Code (candidates от агента) | ✅ |
+| 2 | Цикл «выполнил → оценил → извлёк урок» | Агент извлекает → `curator_session_capture(candidates)` → `gatekeeper.py` → backend (xmemory/SQLite) → `improve_loop.py` | ✅ |
 | 3 | Менять поведение на основе опыта | Improve loop находит дубликаты → consolidation; stale → deprecation; eval gate проверяет перед изменением | ✅ |
 | 4 | Хранить память между рестартами | xmemory (primary) + SQLite (fallback, персистентный файл + offline-outbox, `curator sync`) | ✅ |
 | 5 | Поработать с реальными данными и обучиться на них | ingest реальных `.md` из `learnings/` + реальные сессии OpenCode (`session_reader.py`, opencode.db) + фикстуры структуры learnings в тестах | ✅ |
