@@ -84,7 +84,7 @@
 | `eval_runner.py` | Перед применением улучшения — проверяет метрики | `pytest tests/unit/test_eval_runner.py -v` |
 | `observability.py` | JSONL лог: «когда, что, почему, eval до/после» | `cat ~/.curator/improve_events.jsonl` |
 | `retrieval_feedback.py` | Считает сколько раз каждый факт запрашивали | `pytest tests/unit/test_retrieval_feedback.py -v` |
-| `worker.py` | Автономный демон: раз в сутки improve + авто-decay | `MEMORY_BACKEND=local .venv/bin/curator status` |
+| `worker.py` | Автономный демон: раз в сутки improve + телеметрия | `MEMORY_BACKEND=local .venv/bin/curator status` |
 
 ### 🖥️ Интерфейсы наружу
 
@@ -100,7 +100,7 @@
 
 | Файл | Что делает (простыми словами) | Как проверить |
 |------|------------------------------|---------------|
-| `routing/interface.py` | Контракт Router — точка подключения для участника 1 | `pytest tests/unit/test_routing.py -v` |
+| `routing/interface.py` | Контракт Router — точка подключения (реализован MapRouter) | `pytest tests/unit/test_routing.py -v` |
 | `routing/default.py` | DefaultRouter — сохраняет в `session/{type}.md` | `pytest tests/unit/test_routing.py -v` |
 | `~/.curator/extraction-rules.yaml` | Правила извлечения (focus/ignore) — читает **агент** при извлечении кандидатов | `cat ~/.curator/extraction-rules.yaml` |
 

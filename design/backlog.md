@@ -2,14 +2,14 @@
 
 Порядок: ядро → тест → пуш → участники интегрируются → backlog.
 
-## Интеграция с участником 1 (карта)
+## Интеграция с Егором (карта)
 
-- [ ] **MapRouter-адаптер**: `route_fact()` читает карту участника 1 (watch_for/targets/captures/mode)
+- [ ] **MapRouter-адаптер**: `route_fact()` читает карту Егора (watch_for/targets/captures/mode)
       и возвращает `targets.path`. Заменяет DefaultRouter. Подключение: `ROUTER_CLASS=...`.
 - [ ] **Смерть extraction-rules.yaml**: карта — единственный конфиг (watch_for = фокус извлечения
       для агента, targets = маршрутизация для бэкенда). До интеграции extraction-rules.yaml
       читает агент/скилл, НЕ бэкенд.
-- [ ] Зафиксировать с участником 1: enum `mode` (update/append/create — update ложится на
+- [ ] Зафиксировать с Егором: enum `mode` (update/append/create — update ложится на
       `SyncEngine._upsert_fact_in_md`), словарь `captures` и его маппинг на FactType
       (Reference/Style/Tool/Spec), валидация карты схемой, карта коммитится в репо.
 

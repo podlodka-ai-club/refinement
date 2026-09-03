@@ -1,13 +1,14 @@
 """Установщик Memory Curator: opencode / Claude Code.
 
-Одна команда вместо пяти ручных шагов:
+Одна команда вместо ручных шагов:
 
-    curator install --opencode   # MCP-секция в конфиг opencode + скилл + worker
-    curator install --claude     # .mcp.json в проекте + скилл
-    curator install              # спросит: opencode или Claude Code
+    curator install --opencode   # MCP + команды + скиллы + worker
+    curator install --claude     # .mcp.json + слэш-команды + скиллы
+    curator install              # спросит, куда ставить
 
-Идемпотентно: повторный запуск обновляет секцию memory-curator,
-остальной конфиг пользователя не трогает.
+Единственный вопрос — куда класть базу знаний (любой путь, создастся при
+первом сохранении). Идемпотентно: повторный запуск обновляет наши секции,
+конфиг пользователя не трогает.
 """
 
 import json
@@ -30,81 +31,97 @@ def _server_command() -> tuple[str, list[str]]:
     return sys.executable, ["-m", "curator.server"]
 
 
-def _default_base_dir() -> str:
-    return os.path.expanduser("~/Documents/AI/personal/learnings")
+def default_base_dir() -> str:
+    """Дефолт базы знаний — нейтральный путь (не привязан к машине автора)."""
+    return os.path.expanduser("~/memory-curator")
 
 
-def _skill_source() -> Path | None:
-    """Скилл из репо (editable-установка). wheels без репо — скилл не ставим."""
-    repo_root = Path(__file__).resolve().parents[2]
-    skill = repo_root / ".agents" / "skills" / "curator-save"
-    return skill if (skill / "SKILL.md").exists() else None
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
 
 
-def _install_skill(dest_root: Path) -> str | None:
-    """Скопировать скилл в <dest_root>/curator-save. Возвращает путь или None."""
-    source = _skill_source()
-    if source is None:
-        return None
-    dest = dest_root / "curator-save"
-    if dest.exists():
-        shutil.rmtree(dest)
-    shutil.copytree(source, dest)
-    return dest
+def _install_skills(dest_root: Path) -> list[Path]:
+    """Скопировать ВСЕ скиллы из репо (curator-save, mapping-documentation
+    и будущие) в <dest_root>/. wheel-установка без репо — пусто."""
+    skills_root = _repo_root() / ".agents" / "skills"
+    if not skills_root.is_dir():
+        return []
+    installed = []
+    for source in sorted(skills_root.iterdir()):
+        if not (source / "SKILL.md").exists():
+            continue
+        dest = dest_root / source.name
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(source, dest)
+        installed.append(dest)
+    return installed
 
 
-def _merge_json_config(config_path: Path, update: dict, section: str, key: str) -> tuple[bool, str]:
-    """Аккуратно вписать update[key] в cfg[section], не трогая остальное.
+def _commands_source() -> dict:
+    """Команды (/curator-*) из репо — источник правды для opencode и Claude Code."""
+    path = _repo_root() / "integrations" / "commands.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
 
-    Идемпотентно и безопасно: существующий конфиг с незнакомым/битым JSON
-    не перезаписывается — человек правит руками.
-    """
-    config: dict = {}
-    if config_path.exists():
-        try:
-            config = json.loads(config_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError) as e:
-            return False, (f"не смог прочитать {config_path} ({e}) — "
-                           f"боюсь сломать твой конфиг, добавь секцию руками")
-        if not isinstance(config, dict):
-            return False, f"{config_path} не JSON-объект — добавь секцию руками"
 
-    config.setdefault(section, {})[key] = update
+def _read_json_config(config_path: Path) -> tuple[dict | None, str | None]:
+    if not config_path.exists():
+        return {}, None
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as e:
+        return None, f"не смог прочитать {config_path} ({e}) — боюсь сломать твой конфиг, добавь секции руками"
+    if not isinstance(config, dict):
+        return None, f"{config_path} не JSON-объект — добавь секции руками"
+    return config, None
+
+
+def _write_json_config(config_path: Path, config: dict) -> None:
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return True, str(config_path)
 
 
-def _mcp_entry() -> dict:
+def _mcp_entry(base_dir: str) -> dict:
     command, args = _server_command()
     return {
         "command": command,
         **({"args": args} if args else {}),
         "env": {
             "MEMORY_BACKEND": "local",
-            "CURATOR_BASE_DIR": _default_base_dir(),
+            "CURATOR_BASE_DIR": base_dir,
+            # MapRouter без карты молча = дефолт (session/{type}.md);
+            # карта появится в базе — маршрутизация по темам включится сама
+            "ROUTER_CLASS": "curator.routing.map_router.MapRouter",
         },
     }
 
 
-def install_opencode() -> list[str]:
-    """MCP-секция в ~/.config/opencode/opencode.json + скилл + worker."""
+def install_opencode(base_dir: str | None = None) -> list[str]:
+    """MCP + команды + скиллы + worker в ~/.config/opencode."""
     home = Path(os.environ.get("HOME", str(Path.home())))
-    steps = []
+    base = base_dir or default_base_dir()
+    steps = [f"База знаний: {base} (создастся при первом сохранении)"]
 
-    ok, result = _merge_json_config(
-        home / ".config" / "opencode" / "opencode.json",
-        _mcp_entry(), section="mcp", key="memory-curator",
-    )
-    if not ok:
-        return [f"⛔ MCP-конфиг: {result}"]
-    steps.append(f"✅ MCP-сервер: {result} (секция mcp.memory-curator, остальное не тронуто)")
+    config_path = home / ".config" / "opencode" / "opencode.json"
+    config, error = _read_json_config(config_path)
+    if config is None:
+        return [f"⛔ MCP/команды: {error}"]
+    config.setdefault("mcp", {})["memory-curator"] = _mcp_entry(base)
+    commands = _commands_source()
+    if commands:
+        config.setdefault("command", {}).update(commands)
+    _write_json_config(config_path, config)
+    steps.append(f"✅ MCP-сервер и {len(commands)} команд /curator-*: {config_path} (остальное не тронуто)")
 
-    skill = _install_skill(home / ".config" / "opencode" / "skills")
-    if skill:
-        steps.append(f"✅ Скилл curator-save: {skill}")
+    skills = _install_skills(home / ".config" / "opencode" / "skills")
+    if skills:
+        steps.append(f"✅ Скиллы: {', '.join(s.name for s in skills)}")
     else:
-        steps.append("⚠ скилл не найден в репо (wheel-установка?) — MCP работает, скилл скопируй руками")
+        steps.append("⚠ скиллы не найдены в репо (wheel-установка?) — MCP и команды работают")
 
     try:
         from curator.daemon import ensure_worker
@@ -113,30 +130,44 @@ def install_opencode() -> list[str]:
         steps.append(f"⚠ worker не поднялся: {e} — запусти позже: curator start")
 
     steps.append("")
-    steps.append("Готово. Перезапусти opencode — появятся тулзы curator_* и скилл curator-save.")
+    steps.append("Готово. Перезапусти opencode — появятся команды /curator-*, тулзы curator_* и скиллы.")
     return steps
 
 
-def install_claude(project_dir: Path | None = None) -> list[str]:
-    """.mcp.json в проекте (cwd) + скилл в ~/.claude/skills."""
+def install_claude(base_dir: str | None = None, project_dir: Path | None = None) -> list[str]:
+    """.mcp.json в проекте (cwd) + слэш-команды ~/.claude/commands + скиллы."""
     home = Path(os.environ.get("HOME", str(Path.home())))
     project = project_dir or Path.cwd()
-    steps = []
+    base = base_dir or default_base_dir()
+    steps = [f"База знаний: {base} (создастся при первом сохранении)"]
 
-    ok, result = _merge_json_config(
-        project / ".mcp.json",
-        _mcp_entry(), section="mcpServers", key="memory-curator",
-    )
-    if not ok:
-        return [f"⛔ .mcp.json: {result}"]
-    steps.append(f"✅ MCP-сервер: {result} (mcpServers.memory-curator)")
+    mcp_path = project / ".mcp.json"
+    config, error = _read_json_config(mcp_path)
+    if config is None:
+        return [f"⛔ .mcp.json: {error}"]
+    config.setdefault("mcpServers", {})["memory-curator"] = _mcp_entry(base)
+    _write_json_config(mcp_path, config)
+    steps.append(f"✅ MCP-сервер: {mcp_path}")
 
-    skill = _install_skill(home / ".claude" / "skills")
-    if skill:
-        steps.append(f"✅ Скилл curator-save: {skill}")
+    commands = _commands_source()
+    commands_dir = home / ".claude" / "commands"
+    if commands:
+        commands_dir.mkdir(parents=True, exist_ok=True)
+        for name, spec in commands.items():
+            description = spec.get("description", "")
+            template = spec.get("template", "")
+            (commands_dir / f"{name}.md").write_text(
+                f"---\ndescription: {description}\n---\n\n{template}\n",
+                encoding="utf-8",
+            )
+        steps.append(f"✅ Слэш-команды: {len(commands)} в {commands_dir}")
+
+    skills = _install_skills(home / ".claude" / "skills")
+    if skills:
+        steps.append(f"✅ Скиллы: {', '.join(s.name for s in skills)}")
     else:
-        steps.append("⚠ скилл не найден в репо (wheel-установка?) — скопируй руками")
+        steps.append("⚠ скиллы не найдены в репо (wheel-установка?) — MCP и команды работают")
 
     steps.append("")
-    steps.append("Готово. Перезапусти Claude Code в проекте — появятся тулзы curator_*.")
+    steps.append("Готово. Перезапусти Claude Code в проекте — появятся команды /curator-*, тулзы curator_* и скиллы.")
     return steps

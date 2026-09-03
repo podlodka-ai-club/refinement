@@ -111,7 +111,7 @@ ignore:
   - "Конкретные баги и их фиксы"
   - "Временные решения и workaround'ы"
 ```
-> Backlog: заменяется «картой» участника 1 (watch_for/targets) — единый конфиг проекта.
+> Заменяется «картой» Егора (watch_for/targets) — единый конфиг проекта.
 
 ### Router Protocol (модульная маршрутизация)
 `curator/routing/interface.py` — контракт `Router`. Участник 1 реализует свой `RoutingRouter` с чтением `routing.yaml`. Подключение: `ROUTER_CLASS=your.module.YourRouter`.
