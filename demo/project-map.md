@@ -100,7 +100,7 @@
 
 | Файл | Что делает (простыми словами) | Как проверить |
 |------|------------------------------|---------------|
-| `routing/interface.py` | Контракт Router — точка подключения для участника 1 | `pytest tests/unit/test_routing.py -v` |
+| `routing/interface.py` | Контракт Router — точка подключения (реализован MapRouter) | `pytest tests/unit/test_routing.py -v` |
 | `routing/default.py` | DefaultRouter — сохраняет в `session/{type}.md` | `pytest tests/unit/test_routing.py -v` |
 | `~/.curator/extraction-rules.yaml` | Правила извлечения (focus/ignore) — читает **агент** при извлечении кандидатов | `cat ~/.curator/extraction-rules.yaml` |
 

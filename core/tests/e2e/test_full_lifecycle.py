@@ -298,7 +298,7 @@ class TestOfflineOutbox:
 
 
 class TestMapRoutingE2E:
-    """Сквозная интеграция с картой участника 1: capture → MapRouter →
+    """Сквозная интеграция с картой Егора: capture → MapRouter →
     таргеты карты, mode в write-back (readonly — честный ⚠), routes
     показывает темы, OKF-тип факта не мутируется маршрутизацией."""
 

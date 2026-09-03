@@ -10,69 +10,84 @@ pip install -e ".[dev]"
 curator install --opencode   # или --claude; без флага спросит
 ```
 
-`install --opencode` впишет MCP-сервер в конфиг opencode
-(`~/.config/opencode/opencode.json`), поставит скилл curator-save и поднимет
-worker самоулучшения. После установки перезапусти opencode — готово.
-`install --claude` — то же для Claude Code: `.mcp.json` в проекте + скилл.
+Единственный вопрос установки — **куда класть базу знаний** (любой путь,
+по умолчанию `~/memory-curator`; это просто папка с `.md` — можно положить
+внутрь репо проекта, чтобы база жила в гите; создастся при первом
+сохранении; сменить потом — env `CURATOR_BASE_DIR` в конфиге).
+
+Инсталлер сам впишет в opencode: MCP-сервер (тулзы `curator_*`), все
+команды `/curator-*`, оба скилла (curator-save и mapping-documentation)
+и поднимет worker самоулучшения. Перезапусти opencode — готово.
+`install --claude` — то же для Claude Code: `.mcp.json` в проекте +
+слэш-команды `~/.claude/commands/` + скиллы.
 
 ## 1. Первый запуск (TERMINAL)
 
 ```bash
-cd <путь-к-репо>/memory-curator/core
-
-# Установить
-.venv/bin/pip install -e ".[dev]"
-
-# Посмотреть что уже есть в базе
-MEMORY_BACKEND=local curator status
-
 # Тур: полный цикл жизни знания за 1 минуту
-# (gatekeeper → write-back → query → improve → auto-decay, всё на изолированной базе)
+# (gatekeeper → write-back → query → improve → телеметрия, всё на изолированной базе)
 curator demo            # посмотреть и удалить
 curator demo --keep     # оставить файлы для осмотра
 
+# Статус базы / worker
+curator status
+
 # Запустить worker daemon (авто-улучшение раз в сутки)
-MEMORY_BACKEND=local curator start
+curator start
 ```
 
-## 2. OpenCode (замена /save-knowledge)
+## 2. Команды (появляются после install)
 
-После перезапуска OpenCode появятся команды:
+| Команда | Что делает |
+|---------|-----------|
+| `/curator-save` | Извлечь знания из сессии → self-review → gatekeeper → preview → сохранить |
+| `/curator-create-map` | Построить карту документации проекта (скилл mapping-documentation) и подключить маршрутизацию |
+| `/curator-status` | Сколько фактов, по типам (с описаниями-словарём) и статусам |
+| `/curator-query "kotlin"` | Поиск фактов перед работой |
+| `/curator-report` | Статус + топ запросов + improve-лог |
+| `/curator-start` / `/curator-stop` / `/curator-worker` | Управление фоновым worker |
 
-| Команда | Что делает | Было раньше |
-|---------|-----------|-------------|
-| `/curator-save` | Агент извлекает знания из сессии → self-review → кандидаты → gatekeeper → preview → сохранить | `/save-knowledge` |
-| `/curator-status` | Сколько фактов, по типам и статусам | Не было |
-| `/curator-query "kotlin"` | Поиск фактов перед работой | Не было |
-| `/curator-report` | Статус + топ запросов | Не было |
+Извлечение делает сам агент (он LLM), бэкенд управляет данными —
+LLM-вызовов в сервере нет.
 
-Бесшовная миграция: вместо `/save-knowledge` → `/curator-save`. Под капотом — MCP-сервер.
-Извлечение делает сам агент (он LLM), бэкенд управляет данными — LLM-вызовов в сервере нет.
+## 2а. Куда кладутся знания
 
-Скилл `.agents/skills/curator-save/` добавляет проактивный триггер: агент
-сам предлагает сохранить проверенное знание по ходу сессии. Подключение в
-opencode — симлинком: `ln -s <repo>/.agents/skills/curator-save
-~/.config/opencode/skills/curator-save`.
+База — выбранная при установке папка (дефолт `~/memory-curator`). Внутри:
+`session/{type}.md` с фактами и `index.md`-навигация. `.md` читаются
+человеком и git'ом; смена пути — env `CURATOR_BASE_DIR` в конфиге
+opencode (секция `mcp.memory-curator`) или в `.mcp.json` проекта.
 
-## 2а. Claude Code
+## 2б. Карта документации проекта (маршрутизация по темам)
 
-`integrations/claude-code/` — `.mcp.json` (MCP-сервер), скилл и инструкция
-подключения за 3 шага: [README](../integrations/claude-code/README.md).
+Хочешь, чтобы знания раскладывались не по типам, а по темам проекта
+(«архитектура → docs/architecture.md», «стиль → style/…»)? Это делает
+**карта документации** — и она уже подключена: при установке пишется
+`ROUTER_CLASS=MapRouter`, без карты он молча работает как дефолт.
 
-## 2б. Маршрутизация по карте документации (MapRouter)
+**Флоу — без настройки:**
 
-Ядро умеет читать карту формата скилла mapping-documentation (темы →
-таргеты, mode update/append/readonly):
+1. В opencode открой проект с документацией и набери `/curator-create-map`.
+2. Скилл mapping-documentation (Егора) построит карту: сам спросит границы
+   поиска и куда сохранить — укажи `DOCUMENTATION-MAP.md` внутри базы.
+3. Готово: факты из сессий едут по темам карты.
 
-```bash
-# карта: <base_dir>/DOCUMENTATION-MAP.md (или env CURATOR_MAP)
-ROUTER_CLASS=curator.routing.map_router.MapRouter curator-mcp-server
+Карта — Markdown с YAML-темами:
+
+```yaml
+---
+topics:
+  - name: architecture          # имя = теги для матчинга (короче — лучше)
+    types: [Reference]          # опционально: какие типы фактов сюда
+    targets:
+      - path: docs/architecture.md
+        mode: update            # update = перезапись | append = не трогать существущее | readonly = не писать
+---
 ```
 
-Порядок решения: путь от агента (скилл разрулил glob) → теги ∩ токены
-имени темы → явное `types:` темы → нет матча: report + дефолт.
-Подробности и мнения: [design/integration-map-router.md](../design/integration-map-router.md).
-
+Порядок маршрутизации: путь от агента (скилл разрулил glob-таргет, поле
+`source_file` кандидата) → теги ∩ токены имени темы → явное `types:` →
+нет матча: честный дефолт `session/{type}.md`. `on_unmatched` виден в
+stderr сервера.
 ## 2в. Демонстрация заявленного
 
 E2E-сценарий `core/tests/e2e/test_full_lifecycle.py` — связный прогон всей
@@ -95,6 +110,7 @@ E2E-сценарий `core/tests/e2e/test_full_lifecycle.py` — связный 
 | `curator improve` | Ручной запуск improve цикла |
 | `curator routes` | Правила маршрутизации фактов по папкам |
 | `curator sync` | Пуш offline-outbox в xmemory (после восстановления сети) |
+| `curator install [--opencode\|--claude] [--base-dir ПУТЬ]` | Установить в opencode / Claude Code: MCP + команды + скиллы + worker |
 | `curator demo` | Тур: полный жизненный цикл знания на изолированной базе (для быстрой проверки) |
 
 ## 4. План на 2 недели
@@ -115,9 +131,11 @@ Worker делает всё в фоне. Ты только смотришь `cura
 Раз в сутки worker просыпается и:
 
 1. **Дубликаты** — находит → consolidation (с eval-проверкой)
-2. **Устаревшие** — hypothesis/deprecated → deprecation (с eval-проверкой)
+2. **Устаревшие** — hypothesis → deprecation (с eval-проверкой)
 3. **Противоречия** — детект + авто-разрешение (verified > hypothesis > deprecated)
-4. **Авто-decay** — unused >30д → hypothesis, unused >90д → deprecated
+4. **Телеметрия** — usage-статистика (`curator report`, `/curator-report`):
+   какие знания читают, какие забыты — совет человеку, автоматика не казнит
+   (таймерного decay нет: время не делает факт ложным)
 5. **Observability** — JSONL запись всех действий с метриками до/после
 
 Интервал: `IMPROVE_INTERVAL_MINUTES` (default: 1440 = сутки).

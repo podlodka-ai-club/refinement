@@ -1,6 +1,6 @@
 """MapRouter: маршрутизация фактов по карте документации.
 
-Карта — формат скилла mapping-documentation (участник 1): frontmatter с
+Карта — формат скилла mapping-documentation (Егор): frontmatter с
 topics[name, watch_for, targets[path/captures/mode/instructions]].
 Наша попытка интеграции — детерминированная: LLM в ядре нет, prose
 watch_for не парсим (это инструкция агенту).

@@ -1,17 +1,8 @@
 """Routing module — контракт и default-реализация.
 
-TODO(participant-1): реализовать RoutingRouter с чтением routing.yaml.
-  См. curator/routing/interface.py — контракт Router.
-  Подключение: ROUTER_CLASS=your.module.YourRouter curator-mcp-server
-  Пример routing.yaml:
-      routes:
-        - path: "reference/kotlin/"
-          rules:
-            - tags_contains: ["kotlin", "jvm"]
-        - path: "style/"
-          rules:
-            - type: "Style"
-      default: "general/"
+Кастомный роутер подключается через ROUTER_CLASS (см. interface.py —
+контракт Router). Встроенный MapRouter читает карту документации
+(см. map_router.py); без карты молча ведёт себя как DefaultRouter.
 """
 
 from curator.routing.interface import Router
