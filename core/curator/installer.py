@@ -14,6 +14,7 @@ env CURATOR_BASE_DIR в конфиге (или руками). Флаги — т�
 
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -76,8 +77,16 @@ def _read_json_config(config_path: Path) -> tuple[dict | None, str | None]:
     if not config_path.exists():
         return {}, None
     try:
-        config = json.loads(config_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as e:
+        text = config_path.read_text(encoding="utf-8")
+    except OSError as e:
+        return None, f"не смог прочитать {config_path} ({e})"
+    # Конфиги правят руками → jsonc-хвосты (запятая перед } или ]) встречаются;
+    # строгий json.loads на них падает. Читаем снисходительно, записываем
+    # обратно чистым JSON — заодно вылечиваем конфиг.
+    text = re.sub(r",(\s*[}\]])", r"\1", text)
+    try:
+        config = json.loads(text)
+    except json.JSONDecodeError as e:
         return None, f"не смог прочитать {config_path} ({e}) — боюсь сломать твой конфиг, добавь секции руками"
     if not isinstance(config, dict):
         return None, f"{config_path} не JSON-объект — добавь секции руками"
@@ -89,18 +98,37 @@ def _write_json_config(config_path: Path, config: dict) -> None:
     config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def _mcp_entry(base_dir: str) -> dict:
+def _mcp_entry_opencode(base_dir: str) -> dict:
+    """MCP-секция в формате схемы opencode: type=local + enabled —
+    обязательные поля, без них opencode падает на старте
+    (ConfigInvalidError: Expected type local|remote, Missing key enabled)."""
+    command, args = _server_command()
+    return {
+        "type": "local",
+        "enabled": True,
+        "command": command,
+        **({"args": args} if args else {}),
+        "env": _mcp_env(base_dir),
+    }
+
+
+def _mcp_entry_claude(base_dir: str) -> dict:
+    """Формат Claude Code (.mcp.json): command/args/env, type/enabled не нужны."""
     command, args = _server_command()
     return {
         "command": command,
         **({"args": args} if args else {}),
-        "env": {
-            "MEMORY_BACKEND": "local",
-            "CURATOR_BASE_DIR": base_dir,
-            # MapRouter без карты молча = дефолт (session/{type}.md);
-            # карта появится в базе — маршрутизация по темам включится сама
-            "ROUTER_CLASS": "curator.routing.map_router.MapRouter",
-        },
+        "env": _mcp_env(base_dir),
+    }
+
+
+def _mcp_env(base_dir: str) -> dict:
+    return {
+        "MEMORY_BACKEND": "local",
+        "CURATOR_BASE_DIR": base_dir,
+        # MapRouter без карты молча = дефолт (session/{type}.md);
+        # карта появится в базе — маршрутизация по темам включится сама
+        "ROUTER_CLASS": "curator.routing.map_router.MapRouter",
     }
 
 
@@ -175,7 +203,7 @@ def _install_opencode_steps(base_dir: str | None) -> list[str]:
     if config is None:
         return [f"⛔ opencode: {error}"]
     base = _effective_base(config, "mcp", "memory-curator", base_dir)
-    config.setdefault("mcp", {})["memory-curator"] = _mcp_entry(base)
+    config.setdefault("mcp", {})["memory-curator"] = _mcp_entry_opencode(base)
     commands = _commands_source()
     if commands:
         config.setdefault("command", {}).update(commands)
@@ -207,7 +235,7 @@ def _install_claude_steps(base_dir: str | None) -> list[str]:
     if config is None:
         return [f"⛔ Claude Code: {error}"]
     base = _effective_base(config, "mcpServers", "memory-curator", base_dir)
-    config.setdefault("mcpServers", {})["memory-curator"] = _mcp_entry(base)
+    config.setdefault("mcpServers", {})["memory-curator"] = _mcp_entry_claude(base)
     _write_json_config(mcp_path, config)
     steps = [f"✅ Claude Code: MCP-сервер: {mcp_path}",
              f"✅ Claude Code: база знаний: {base}"]
