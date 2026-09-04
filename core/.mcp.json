@@ -4,7 +4,7 @@
       "command": "/Users/rodionovsergej/Documents/GitHub/memory-curator/core/.venv/bin/curator-mcp-server",
       "env": {
         "MEMORY_BACKEND": "local",
-        "CURATOR_BASE_DIR": "/Users/rodionovsergej/memory-curator",
+        "CURATOR_BASE_DIR": "/Users/rodionovsergej/Documents/AI/personal/learnings",
         "ROUTER_CLASS": "curator.routing.map_router.MapRouter"
       }
     }

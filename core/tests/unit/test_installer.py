@@ -232,3 +232,62 @@ class TestSkillSymlinkDest:
 def _repo_root_for_test():
     from curator.installer import _repo_root
     return _repo_root()
+
+
+class TestOpencodeMcpSchema:
+    """Регрессия живого инцидента: opencode падает на старте
+    (ConfigInvalidError) без обязательных полей type=local и enabled."""
+
+    def test_opencode_entry_has_schema_fields(self, tmp_path):
+        _opencode_dir(tmp_path)
+        installer.install_all()
+        entry = json.loads((_opencode_dir(tmp_path) / "opencode.json").read_text(encoding="utf-8"))["mcp"]["memory-curator"]
+        assert entry["type"] == "local", "opencode: Expected type local|remote — падает без type"
+        assert entry["enabled"] is True, "opencode: Missing key enabled — падает без enabled"
+        assert entry["command"] and entry["env"]["CURATOR_BASE_DIR"]
+
+    def test_claude_entry_without_opencode_fields(self, tmp_path, monkeypatch):
+        _claude_dir(tmp_path)
+        project = tmp_path / "proj"
+        project.mkdir()
+        monkeypatch.chdir(project)
+        installer.install_all()
+        entry = json.loads((project / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["memory-curator"]
+        assert "type" not in entry and "enabled" not in entry, \
+            "у Claude Code своя схема: type/enabled не пишем"
+        assert entry["command"] and entry["env"]["CURATOR_BASE_DIR"]
+
+
+class TestJsoncTolerance:
+    """Конфиги правят руками — jsonc-хвосты (запятая перед } или ]) не должны
+    ломать установку; записываем обратно чистым JSON (лечим конфиг)."""
+
+    def test_trailing_comma_read_and_healed(self, tmp_path):
+        config_path = _opencode_dir(tmp_path) / "opencode.json"
+        config_path.write_text('{"model": "x", "mcp": {},}', encoding="utf-8")
+
+        steps = installer.install_all()
+
+        assert not any("⛔" in s for s in steps)
+        text = config_path.read_text(encoding="utf-8")
+        data = json.loads(text)  # записанное обязано быть строгим JSON
+        assert data["model"] == "x"
+        assert "memory-curator" in data["mcp"]
+
+    def test_real_user_scenario_after_manual_removal(self, tmp_path):
+        """Инцидент: пользователь руками вырезал секцию и оставил запятую."""
+        config_path = _opencode_dir(tmp_path) / "opencode.json"
+        config_path.write_text(json.dumps({
+            "model": "gpt-5",
+            "mcp": {"gitlab": {"type": "remote", "enabled": True, "url": "https://x"}},
+            "command": {"skill-creator": {"description": "d", "template": "t"}},
+        })[:-1] + ",}", encoding="utf-8")
+
+        installer.install_all(base_dir="/home/user/kb")
+
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        assert data["mcp"]["gitlab"]["url"] == "https://x", "чужой mcp цел"
+        entry = data["mcp"]["memory-curator"]
+        assert entry["type"] == "local" and entry["enabled"] is True
+        assert entry["env"]["CURATOR_BASE_DIR"] == "/home/user/kb"
+        assert data["command"]["skill-creator"]["description"] == "d"
