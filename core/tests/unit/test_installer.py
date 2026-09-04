@@ -41,7 +41,7 @@ class TestAutoDetect:
         assert any("opencode: MCP" in s for s in steps)
         assert not any("Claude Code: MCP" in s for s in steps)
         config = json.loads((tmp_path / ".config" / "opencode" / "opencode.json").read_text(encoding="utf-8"))
-        assert config["mcp"]["memory-curator"]["env"]["ROUTER_CLASS"] == "curator.routing.map_router.MapRouter"
+        assert config["mcp"]["memory-curator"]["environment"]["ROUTER_CLASS"] == "curator.routing.map_router.MapRouter"
 
     def test_claude_only(self, tmp_path, monkeypatch):
         _claude_dir(tmp_path)
@@ -98,7 +98,7 @@ class TestZeroQuestions:
         _opencode_dir(tmp_path)
         installer.install_all(base_dir=str(tmp_path / "custom-kb"))
         config = json.loads((tmp_path / ".config" / "opencode" / "opencode.json").read_text(encoding="utf-8"))
-        assert config["mcp"]["memory-curator"]["env"]["CURATOR_BASE_DIR"] == str(tmp_path / "custom-kb")
+        assert config["mcp"]["memory-curator"]["environment"]["CURATOR_BASE_DIR"] == str(tmp_path / "custom-kb")
 
     def test_default_base_neutral(self):
         assert installer.default_base_dir().endswith("memory-curator")
@@ -193,22 +193,22 @@ class TestPatchPreservesBase:
         self._existing_config(tmp_path, "/home/user/precious-kb")
         installer.install_all()
         data = json.loads((_opencode_dir(tmp_path) / "opencode.json").read_text(encoding="utf-8"))
-        assert data["mcp"]["memory-curator"]["env"]["CURATOR_BASE_DIR"] == "/home/user/precious-kb", \
+        assert data["mcp"]["memory-curator"]["environment"]["CURATOR_BASE_DIR"] == "/home/user/precious-kb", \
             "патч обязан сохранять существующую базу — молчаливый сброс = потеря базы"
-        assert "ROUTER_CLASS" in data["mcp"]["memory-curator"]["env"], \
+        assert "ROUTER_CLASS" in data["mcp"]["memory-curator"]["environment"], \
             "остальное при патче обновляется"
 
     def test_base_dir_flag_overrides_existing(self, tmp_path):
         self._existing_config(tmp_path, "/home/user/old-kb")
         installer.install_all(base_dir="/home/user/new-kb")
         data = json.loads((_opencode_dir(tmp_path) / "opencode.json").read_text(encoding="utf-8"))
-        assert data["mcp"]["memory-curator"]["env"]["CURATOR_BASE_DIR"] == "/home/user/new-kb"
+        assert data["mcp"]["memory-curator"]["environment"]["CURATOR_BASE_DIR"] == "/home/user/new-kb"
 
     def test_fresh_install_gets_default(self, tmp_path):
         _opencode_dir(tmp_path)
         installer.install_all()
         data = json.loads((_opencode_dir(tmp_path) / "opencode.json").read_text(encoding="utf-8"))
-        assert data["mcp"]["memory-curator"]["env"]["CURATOR_BASE_DIR"].endswith("memory-curator")
+        assert data["mcp"]["memory-curator"]["environment"]["CURATOR_BASE_DIR"].endswith("memory-curator")
 
 
 class TestSkillSymlinkDest:
@@ -235,27 +235,35 @@ def _repo_root_for_test():
 
 
 class TestOpencodeMcpSchema:
-    """Регрессия живого инцидента: opencode падает на старте
-    (ConfigInvalidError) без обязательных полей type=local и enabled."""
+    """Регрессия живых инцидентов. Официальная схема opencode
+    (opencode.ai/docs/mcp-servers):
+      1) без type=local+enabled — старт падает (ConfigInvalidError)
+      2) command — МАССИВ, переменные — ключ environment (не env):
+         отклонение = сервер молча не стартует, его нет в списке MCP
+    """
 
-    def test_opencode_entry_has_schema_fields(self, tmp_path):
+    def test_opencode_entry_matches_official_schema(self, tmp_path):
         _opencode_dir(tmp_path)
         installer.install_all()
         entry = json.loads((_opencode_dir(tmp_path) / "opencode.json").read_text(encoding="utf-8"))["mcp"]["memory-curator"]
-        assert entry["type"] == "local", "opencode: Expected type local|remote — падает без type"
-        assert entry["enabled"] is True, "opencode: Missing key enabled — падает без enabled"
-        assert entry["command"] and entry["env"]["CURATOR_BASE_DIR"]
+        assert entry["type"] == "local"
+        assert entry["enabled"] is True
+        assert isinstance(entry["command"], list) and entry["command"], \
+            "command обязан быть массивом (команда и аргументы) — строка = сервер молча не стартует"
+        assert "environment" in entry and "env" not in entry, \
+            "переменные окружения в opencode живут под ключом environment"
+        assert entry["environment"]["CURATOR_BASE_DIR"]
 
-    def test_claude_entry_without_opencode_fields(self, tmp_path, monkeypatch):
+    def test_claude_entry_own_schema(self, tmp_path, monkeypatch):
         _claude_dir(tmp_path)
         project = tmp_path / "proj"
         project.mkdir()
         monkeypatch.chdir(project)
         installer.install_all()
         entry = json.loads((project / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["memory-curator"]
-        assert "type" not in entry and "enabled" not in entry, \
-            "у Claude Code своя схема: type/enabled не пишем"
-        assert entry["command"] and entry["env"]["CURATOR_BASE_DIR"]
+        assert "type" not in entry and "environment" not in entry, \
+            "у Claude Code своя схема: command (строка) + env"
+        assert isinstance(entry["command"], str) and entry["env"]["CURATOR_BASE_DIR"]
 
 
 class TestJsoncTolerance:
@@ -289,5 +297,5 @@ class TestJsoncTolerance:
         assert data["mcp"]["gitlab"]["url"] == "https://x", "чужой mcp цел"
         entry = data["mcp"]["memory-curator"]
         assert entry["type"] == "local" and entry["enabled"] is True
-        assert entry["env"]["CURATOR_BASE_DIR"] == "/home/user/kb"
+        assert entry["environment"]["CURATOR_BASE_DIR"] == "/home/user/kb"
         assert data["command"]["skill-creator"]["description"] == "d"

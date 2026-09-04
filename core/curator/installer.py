@@ -99,21 +99,22 @@ def _write_json_config(config_path: Path, config: dict) -> None:
 
 
 def _mcp_entry_opencode(base_dir: str) -> dict:
-    """MCP-секция в формате схемы opencode: type=local + enabled —
-    обязательные поля, без них opencode падает на старте
-    (ConfigInvalidError: Expected type local|remote, Missing key enabled)."""
+    """MCP-секция по официальной схеме opencode (opencode.ai/docs/mcp-servers):
+    command — МАССИВ (команда и аргументы), переменные окружения — ключ
+    environment (не env), type/enabled обязательны. Отклонение от схемы =
+    молча не стартовавший сервер (не видно в списке MCP)."""
     command, args = _server_command()
     return {
         "type": "local",
         "enabled": True,
-        "command": command,
-        **({"args": args} if args else {}),
-        "env": _mcp_env(base_dir),
+        "command": [command, *args],
+        "environment": _mcp_env(base_dir),
     }
 
 
 def _mcp_entry_claude(base_dir: str) -> dict:
-    """Формат Claude Code (.mcp.json): command/args/env, type/enabled не нужны."""
+    """Формат Claude Code (.mcp.json): command (строка) + args + env —
+    своя схема, type/environment не нужны."""
     command, args = _server_command()
     return {
         "command": command,
@@ -151,7 +152,10 @@ def _effective_base(config: dict, section: str, key: str, base_dir: str | None) 
     if base_dir:
         return base_dir
     try:
-        existing = config.get(section, {}).get(key, {}).get("env", {}).get("CURATOR_BASE_DIR")
+        entry = config.get(section, {}).get(key, {})
+        # совместимость: старые ручные конфиги держали env, схема opencode — environment
+        env = entry.get("environment") or entry.get("env") or {}
+        existing = env.get("CURATOR_BASE_DIR")
         if existing:
             return str(existing)
     except AttributeError:
