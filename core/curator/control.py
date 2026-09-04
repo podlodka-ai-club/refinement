@@ -68,7 +68,8 @@ def _configured_base_dir() -> str | None:
         try:
             cfg = json.loads(path.read_text(encoding="utf-8"))
             entry = cfg.get(section, {}).get(key, {})
-            base = entry.get("env", {}).get("CURATOR_BASE_DIR")
+            env = entry.get("environment") or entry.get("env") or {}
+            base = env.get("CURATOR_BASE_DIR")
             if base:
                 return base
         except (OSError, json.JSONDecodeError, AttributeError):
