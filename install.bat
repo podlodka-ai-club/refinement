@@ -1,6 +1,7 @@
 @echo off
-rem Установка Memory Curator: venv + пакет + интеграция в opencode / Claude Code.
-rem Использование: install.bat --opencode   (или --claude, --base-dir ПУТЬ)
+rem Установка Memory Curator — просто запусти, без вопросов:
+rem сам найдёт opencode / Claude Code и поставит всё (MCP, команды, скиллы, worker).
+rem Флаги опциональны (для скриптов): --opencode ^| --claude ^| --base-dir ПУТЬ
 cd /d "%~dp0core"
 
 python -m venv .venv
