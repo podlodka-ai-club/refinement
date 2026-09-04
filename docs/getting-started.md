@@ -7,23 +7,26 @@
 ```bash
 git clone <repo> memory-curator
 cd memory-curator
-./install.sh --opencode      # mac/linux · Windows: install.bat --opencode
+./install.sh          # mac/linux · Windows: install.bat
 ```
 
-Скрипт сам поставит python-пакет и запустит `curator install` (то же
-руками: `cd core && python -m venv .venv && .venv/bin/pip install -e . &&
-.venv/bin/curator install --opencode`).
+Без вопросов и флагов: скрипт поставит python-пакет и запустит `curator
+install`, который сам найдёт opencode и Claude Code на машине и впишет
+в них всё: MCP-сервер (тулзы `curator_*`), команды `/curator-*`, оба
+скилла (curator-save и mapping-documentation) и worker. Перезапусти
+opencode / Claude Code — готово.
 
-Единственный вопрос установки — **куда класть базу знаний** (любой путь,
-по умолчанию `~/memory-curator`; это просто папка с `.md` — можно положить
-внутрь репо проекта, чтобы база жила в гите; создастся при первом
-сохранении; сменить потом — env `CURATOR_BASE_DIR` в конфиге).
+### Настройка после установки
 
-Инсталлер сам впишет в opencode: MCP-сервер (тулзы `curator_*`), все
-команды `/curator-*`, оба скилла (curator-save и mapping-documentation)
-и поднимет worker самоулучшения. Перезапусти opencode — готово.
-`--claude` — то же для Claude Code: `.mcp.json` в проекте + слэш-команды
-`~/.claude/commands/` + скиллы.
+- **Где база?** — `curator status` (или `/curator-status` в opencode).
+  По умолчанию `~/memory-curator` — просто папка с `.md`, создастся при
+  первом сохранении. Можно было указать при установке флагом
+  `--base-dir ПУТЬ` — но проще поменять потом:
+- **Сменить базу** — попроси агента в opencode: «смени базу знаний на
+  D:/kb» — агент поправит `CURATOR_BASE_DIR` в конфиге (спросит
+  подтверждение) и попросит перезапустить. Руками: env `CURATOR_BASE_DIR`
+  в секции `mcp.memory-curator` конфига opencode (или `.mcp.json`
+  проекта для Claude Code).
 
 Разработка (тесты): `pip install -e ".[dev]"` — клиенту `[dev]` не нужен.
 
@@ -58,10 +61,9 @@ LLM-вызовов в сервере нет.
 
 ## 2а. Куда кладутся знания
 
-База — выбранная при установке папка (дефолт `~/memory-curator`). Внутри:
-`session/{type}.md` с фактами и `index.md`-навигация. `.md` читаются
-человеком и git'ом; смена пути — env `CURATOR_BASE_DIR` в конфиге
-opencode (секция `mcp.memory-curator`) или в `.mcp.json` проекта.
+База — `~/memory-curator` по умолчанию (см. «Настройка после установки»
+выше — смена через агента). Внутри: `session/{type}.md` с фактами и
+`index.md`-навигация. `.md` читаются человеком и git'ом.
 
 ## 2б. Карта документации проекта (маршрутизация по темам)
 
@@ -116,7 +118,7 @@ E2E-сценарий `core/tests/e2e/test_full_lifecycle.py` — связный 
 | `curator improve` | Ручной запуск improve цикла |
 | `curator routes` | Правила маршрутизации фактов по папкам |
 | `curator sync` | Пуш offline-outbox в xmemory (после восстановления сети) |
-| `curator install [--opencode\|--claude] [--base-dir ПУТЬ]` | Установить в opencode / Claude Code: MCP + команды + скиллы + worker |
+| `curator install` | Установка без вопросов: автодетект opencode / Claude Code (флаги `--opencode/--claude/--base-dir` — только для скриптов) |
 | `curator demo` | Тур: полный жизненный цикл знания на изолированной базе (для быстрой проверки) |
 
 ## 4. План на 2 недели

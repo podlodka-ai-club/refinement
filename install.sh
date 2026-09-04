@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Установка Memory Curator: venv + пакет + интеграция в opencode / Claude Code.
-# Использование: ./install.sh --opencode   (или --claude, --base-dir ПУТЬ)
+# Установка Memory Curator — просто запусти, без вопросов:
+# сам найдёт opencode / Claude Code и поставит всё (MCP, команды, скиллы, worker).
+# Флаги опциональны (для скриптов): --opencode | --claude | --base-dir ПУТЬ
 set -euo pipefail
 cd "$(dirname "$0")/core"
 

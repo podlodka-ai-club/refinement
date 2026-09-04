@@ -32,7 +32,8 @@ Claude Code — по тому же контракту). Агент и есть L
 MCP-сервер / CLI — единый контракт candidates
     ├─ gatekeeper    валидация: качество, шум-паттерны, дубликаты
     ├─ backend       xmemory (primary) / SQLite (offline + outbox)
-    ├─ write-back    approved-факт возвращается в .md
+    ├─ write-back    approved-факт возвращается в .md (по типам или
+    │                по темам карты проекта — MapRouter)
     └─ improve loop  автономно (worker, раз в сутки):
                     дубликаты → консолидация · stale → deprecation ·
                     противоречия → resolution (verified > hypothesis) ·
@@ -74,12 +75,16 @@ cd core && .venv/bin/python -m pytest tests/requirements/ -v
 ```bash
 git clone https://github.com/podlodka-ai-club/refinement.git
 cd refinement
-./install.sh --opencode      # Windows: install.bat --opencode
+./install.sh          # Windows: install.bat
 # разработка (тесты):
 cd core && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/python -m pytest tests/ -q --ignore=tests/smoke   # все зелёные
 .venv/bin/curator demo                                       # полный цикл жизни знания
 ```
+
+`./install.sh` — без вопросов: сам найдёт opencode / Claude Code, впишет
+MCP-сервер, команды `/curator-*`, скиллы и worker. Перезапусти харнес —
+готово. База — `~/memory-cursor` (см. `curator status`).
 
 `curator demo` прогоняет на изолированной tmp-базе весь жизненный цикл —
 **реальными вызовами** (те же функции, что в проде): кандидаты → gatekeeper
@@ -87,8 +92,7 @@ cd core && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 (дубликат консолидирован, противоречие разрешено) → телеметрия (что реально
 читают) → финальный статус. `--keep` оставит файлы для осмотра.
 
-Подключить к своему агенту (opencode): скилл `/curator-save` + MCP-конфиг —
-[docs/getting-started.md](docs/getting-started.md).
+Подробный гайд: [docs/getting-started.md](docs/getting-started.md).
 
 ## Два варианта развёртывания
 
@@ -106,27 +110,29 @@ cd core && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 |-------|-----|
 | `core/` | ядро (Python): backend/ (xmemory + SQLite + outbox), gatekeeper, improve_loop, sync_engine, MCP-сервер, CLI |
 | `core/tests/requirements/` | тесты требований — имя теста = ID требования |
-| `design/` | архитектура: requirements, spec, decision-log, playbook-routing (контракт Блока 1), backlog |
+| `design/` | архитектура: requirements, spec, decision-log, playbook-routing (контракт Router), backlog |
 | `demo/` | демо/защита: чеклист записи видео, сценарий, путеводитель по коду |
 | `docs/` | day-to-day: getting-started |
 
 ## Статус
 
-- **Ядро (Блок 2) — готово**: candidates-контракт, gatekeeper, xmemory +
-  SQLite fallback с offline-outbox, write-back в .md, improve loop с
-  eval-гейтом, демо-тур `curator demo`. 175 тестов (174 зелёных + 1
-  smoke-пропуск), включая 21 тест-требование *(на 29.08)*
-- **Карта (Блок 1) — в процессе**: routing.yaml — что извлекать из сессий и
-  куда складывать в документацию проекта. Контракт стыка —
-  [design/playbook-routing.md](design/playbook-routing.md)
-- **Бенчмарки (Блок 3) — в процессе**: A/B — одинаковые задачи с плагином и
-  без, дельта ревью-замечаний
+- **Ядро — готово**: candidates-контракт, gatekeeper, xmemory + SQLite
+  fallback с offline-outbox, write-back в .md, improve loop с eval-гейтом,
+  реестр типов с описаниями, демо-тур. **290 тестов** (288 зелёных +
+  2 VPN-пропуска), включая 21 тест-требование
+- **Карта документации (Егор) — готова и интегрирована**: скилл
+  mapping-documentation генерирует карту проекта, ядро читает её
+  (`MapRouter`): маршрутизация фактов по темам, `mode`-дисциплина записи
+  (update/append/readonly), команда `/curator-create-map`
+- **Установка — одна команда**: `./install.sh` / `install.bat`, без
+  вопросов, автодетект opencode / Claude Code
 
 ## Роадмап
 
-- **Карта проекта (Блок 1)**: routing.yaml + MapRouter поверх Router Protocol —
-  что извлекать из сессий и куда складывать в docs
-- **Бенчмарки (Блок 3)**: A/B-задачи с плагином и без, дельта ревью-замечаний
+- **Упаковка**: pipx/uv-установка без клона репо (скиллы и команды —
+  в package data)
+- **`curator pull`**: слить чужие факты из xmemory в локальную — первая
+  ступень командной синхронизации
 - **Двусторонняя .md-синка**: ручная правка файла → авто-переиндексация
 - **Multi-user**: сейчас Git для .md + UPSERT/LWW для фактов; CRDT — при
   реальной одновременной правке
@@ -138,8 +144,7 @@ cd core && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 | Блок | Кто | Зона |
 |------|-----|------|
 | Ядро | Участник 2 | backend, gatekeeper, improve loop, MCP, CLI |
-| Карта | Участник 1 | routing.yaml + скиллы: что и куда извлекать |
-| Бенчмарки | Участник 3 | измерение эффективности на реальных задачах |
+| Карта | Егор | mapping-documentation: карта проекта, MapRouter, скиллы |
 
 ## Ссылки
 

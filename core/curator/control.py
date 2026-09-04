@@ -57,6 +57,25 @@ def _table(headers: list[str], rows: list[list], title: str = ""):
             print(f"  {' | '.join(str(c) for c in row)}")
 
 
+def _configured_base_dir() -> str | None:
+    """База из установленного конфига (opencode.json / .mcp.json), env или None."""
+    import json
+    candidates = [
+        (Path.home() / ".config" / "opencode" / "opencode.json", ("mcp", "memory-curator")),
+        (Path.cwd() / ".mcp.json", ("mcpServers", "memory-curator")),
+    ]
+    for path, (section, key) in candidates:
+        try:
+            cfg = json.loads(path.read_text(encoding="utf-8"))
+            entry = cfg.get(section, {}).get(key, {})
+            base = entry.get("env", {}).get("CURATOR_BASE_DIR")
+            if base:
+                return base
+        except (OSError, json.JSONDecodeError, AttributeError):
+            continue
+    return os.getenv("CURATOR_BASE_DIR")
+
+
 def cmd_status():
     _header("Curator Status")
 
@@ -66,6 +85,10 @@ def cmd_status():
         print(f"  Worker: ✅ запущен (pid {pid})")
     else:
         print("  Worker: ⛔ остановлен")
+
+    base = _configured_base_dir()
+    if base:
+        print(f"  База знаний: {base}")
 
     backend = _make_backend()
     try:
@@ -316,40 +339,25 @@ def cmd_demo():
 
 
 def cmd_install():
-    """Установить Memory Curator: opencode или Claude Code (MCP + команды + скиллы + worker)."""
+    """Установить Memory Curator без вопросов: автодетект opencode/Claude Code."""
     _header("Curator Install")
     from curator import installer
 
     args = sys.argv[2:]
+    target = None
     if "--opencode" in args:
         target = "opencode"
     elif "--claude" in args:
         target = "claude"
-    else:
-        print("  Куда ставим?")
-        print("  1) opencode")
-        print("  2) Claude Code")
-        answer = input("  Выбор [1/2]: ").strip()
-        target = "claude" if answer == "2" else "opencode"
 
     base_dir = None
     if "--base-dir" in args:
         idx = args.index("--base-dir")
         if idx + 1 < len(args):
             base_dir = args[idx + 1]
-    if base_dir is None:
-        # Единственный вопрос установки: база может лежать где угодно —
-        # это просто папка с .md (можно внутри репо проекта, чтобы жила в гите)
-        print("\n  Куда класть базу знаний? Может быть любой путь —")
-        print("  факты и .md лягут туда (папка создастся при первом сохранении).")
-        answer = input(f"  Путь [{installer.default_base_dir()}]: ").strip()
-        base_dir = answer or installer.default_base_dir()
 
+    steps = installer.install_all(target=target, base_dir=base_dir)
     print()
-    if target == "opencode":
-        steps = installer.install_opencode(base_dir=base_dir)
-    else:
-        steps = installer.install_claude(base_dir=base_dir)
     for step in steps:
         print(f"  {step}")
 
@@ -512,7 +520,7 @@ def main():
         print("  curator improve           — ручной improve цикл")
         print("  curator routes            — правила маршрутизации")
         print("  curator sync              — пуш offline-outbox в xmemory")
-        print("  curator install [--opencode|--claude] — установить в opencode / Claude Code (MCP + скилл + worker)")
+        print("  curator install [--opencode|--claude] [--base-dir ПУТЬ] — установка без вопросов (автодетект; флаги — для скриптов)")
         print("  curator demo [--keep] [--backend xmemory] — тур: полный цикл жизни знания")
         print()
         print("Конфигурация: MEMORY_BACKEND, IMPROVE_INTERVAL_MINUTES, XMEMORY_API_KEY")

@@ -350,6 +350,7 @@ def _status() -> str:
 
     lines = [
         f"Всего фактов: {len(all_facts)}",
+        f"База знаний: {base_dir}",
         f"По типам: {json.dumps(by_type, ensure_ascii=False)}",
         f"По статусам: {json.dumps(by_status, ensure_ascii=False)}",
         "",
