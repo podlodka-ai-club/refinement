@@ -52,7 +52,10 @@ def _install_skills(dest_root: Path) -> list[Path]:
         if not (source / "SKILL.md").exists():
             continue
         dest = dest_root / source.name
-        if dest.exists():
+        if dest.is_symlink():
+            # симлинк (например, из ранней ручной установки) нельзя rmtree — только unlink
+            dest.unlink()
+        elif dest.exists():
             shutil.rmtree(dest)
         shutil.copytree(source, dest)
         installed.append(dest)
@@ -109,20 +112,37 @@ def detect_harnesses() -> tuple[bool, bool]:
     return has_opencode, has_claude
 
 
-def _install_footer(base_dir: str) -> list[str]:
+def _effective_base(config: dict, section: str, key: str, base_dir: str | None) -> str:
+    """База для записи в конфиг.
+
+    Патч (повторный install) не имеет права сбрасывать существующую
+    настройку: без явного --base-dir сохраняем CURATOR_BASE_DIR из
+    установленной секции; флаг — осознанное переопределение; свежая
+    установка — дефолт.
+    """
+    if base_dir:
+        return base_dir
+    try:
+        existing = config.get(section, {}).get(key, {}).get("env", {}).get("CURATOR_BASE_DIR")
+        if existing:
+            return str(existing)
+    except AttributeError:
+        pass
+    return default_base_dir()
+
+
+def _install_footer() -> list[str]:
     return [
-        f"База знаний: {base_dir} (по умолчанию, создастся при первом сохранении)",
         "",
         "Готово. Перезапусти opencode / Claude Code — появятся команды /curator-*, "
         "тулзы curator_* и скиллы.",
-        "Где база: curator status · смена: попроси агента «смени базу знаний на <путь>» "
-        "(он поправит CURATOR_BASE_DIR в конфиге и попросит перезапуск)",
+        "База: дефолт ~/memory-curator, существующая настройка сохраняется при обновлении.",
+        "Где база сейчас: curator status · смена: попроси агента «смени базу знаний на <путь>»",
     ]
 
 
 def install_all(target: str | None = None, base_dir: str | None = None) -> list[str]:
     """Установка без вопросов: автодетект → ставим во всё найденное."""
-    base = base_dir or default_base_dir()
     do_opencode, do_claude = detect_harnesses()
     steps: list[str] = []
 
@@ -136,18 +156,17 @@ def install_all(target: str | None = None, base_dir: str | None = None) -> list[
         steps.append("  (для Claude Code потом: curator install --claude)")
 
     if do_opencode:
-        steps.extend(_install_opencode_steps(base))
+        steps.extend(_install_opencode_steps(base_dir))
     if do_claude:
         if do_opencode:
             steps.append("")
-        steps.extend(_install_claude_steps(base))
+        steps.extend(_install_claude_steps(base_dir))
 
-    steps.append("")
-    steps.extend(_install_footer(base))
+    steps.extend(_install_footer())
     return steps
 
 
-def _install_opencode_steps(base_dir: str) -> list[str]:
+def _install_opencode_steps(base_dir: str | None) -> list[str]:
     """MCP + команды + скиллы + worker в ~/.config/opencode (без футера)."""
     home = Path(os.environ.get("HOME", str(Path.home())))
 
@@ -155,12 +174,14 @@ def _install_opencode_steps(base_dir: str) -> list[str]:
     config, error = _read_json_config(config_path)
     if config is None:
         return [f"⛔ opencode: {error}"]
-    config.setdefault("mcp", {})["memory-curator"] = _mcp_entry(base_dir)
+    base = _effective_base(config, "mcp", "memory-curator", base_dir)
+    config.setdefault("mcp", {})["memory-curator"] = _mcp_entry(base)
     commands = _commands_source()
     if commands:
         config.setdefault("command", {}).update(commands)
     _write_json_config(config_path, config)
-    steps = [f"✅ opencode: MCP-сервер и {len(commands)} команд /curator-*: {config_path} (остальное не тронуто)"]
+    steps = [f"✅ opencode: MCP-сервер и {len(commands)} команд /curator-*: {config_path} (остальное не тронуто)",
+             f"✅ opencode: база знаний: {base}"]
 
     skills = _install_skills(home / ".config" / "opencode" / "skills")
     if skills:
@@ -176,7 +197,7 @@ def _install_opencode_steps(base_dir: str) -> list[str]:
     return steps
 
 
-def _install_claude_steps(base_dir: str) -> list[str]:
+def _install_claude_steps(base_dir: str | None) -> list[str]:
     """.mcp.json в проекте (cwd) + слэш-команды ~/.claude/commands + скиллы (без футера)."""
     home = Path(os.environ.get("HOME", str(Path.home())))
     project = Path.cwd()
@@ -185,9 +206,11 @@ def _install_claude_steps(base_dir: str) -> list[str]:
     config, error = _read_json_config(mcp_path)
     if config is None:
         return [f"⛔ Claude Code: {error}"]
-    config.setdefault("mcpServers", {})["memory-curator"] = _mcp_entry(base_dir)
+    base = _effective_base(config, "mcpServers", "memory-curator", base_dir)
+    config.setdefault("mcpServers", {})["memory-curator"] = _mcp_entry(base)
     _write_json_config(mcp_path, config)
-    steps = [f"✅ Claude Code: MCP-сервер: {mcp_path}"]
+    steps = [f"✅ Claude Code: MCP-сервер: {mcp_path}",
+             f"✅ Claude Code: база знаний: {base}"]
 
     commands = _commands_source()
     commands_dir = home / ".claude" / "commands"

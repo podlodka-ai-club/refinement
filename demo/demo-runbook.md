@@ -143,6 +143,6 @@ Hacker Sprint #2, podlodka-ai-club
 
 Технологии: Python 3.12+, xmemory, MCP SDK v2, SQLite
 Извлечение знаний: сам агент (LLM на стороне opencode / Claude Code, не в бэкенде)
-175 тестов (включая 21 тест-требование), 0 ошибок
+290+ тестов (включая 21 тест-требование), 0 ошибок
 ~20 .md файлов `learnings/`
 ```

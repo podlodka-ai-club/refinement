@@ -90,7 +90,7 @@ class TestZeroQuestions:
     def test_footer_tells_how_to_change_base(self, tmp_path):
         steps = installer.install_all()
         text = "\n".join(steps)
-        assert "База знаний:" in text and "curator status" in text, \
+        assert "База" in text and "curator status" in text, \
             "где база и как сменить — обязаны быть в выводе, не вопросом"
         assert "попроси агента" in text
 
@@ -172,3 +172,63 @@ class TestServerCommand:
         command, args = installer._server_command()
         assert Path(command).exists()
         assert isinstance(args, list)
+
+
+class TestPatchPreservesBase:
+    """Патч (повторный install) не имеет права сбрасывать существующую
+    базу: без --base-dir сохраняем CURATOR_BASE_DIR из установленной
+    секции; флаг — осознанное переопределение; свежая установка — дефолт."""
+
+    def _existing_config(self, tmp_path, base):
+        config_path = _opencode_dir(tmp_path) / "opencode.json"
+        config_path.write_text(json.dumps({
+            "mcp": {"memory-curator": {
+                "command": "old-server",
+                "env": {"MEMORY_BACKEND": "local", "CURATOR_BASE_DIR": base},
+            }},
+        }), encoding="utf-8")
+        return config_path
+
+    def test_existing_base_preserved_on_patch(self, tmp_path):
+        self._existing_config(tmp_path, "/home/user/precious-kb")
+        installer.install_all()
+        data = json.loads((_opencode_dir(tmp_path) / "opencode.json").read_text(encoding="utf-8"))
+        assert data["mcp"]["memory-curator"]["env"]["CURATOR_BASE_DIR"] == "/home/user/precious-kb", \
+            "патч обязан сохранять существующую базу — молчаливый сброс = потеря базы"
+        assert "ROUTER_CLASS" in data["mcp"]["memory-curator"]["env"], \
+            "остальное при патче обновляется"
+
+    def test_base_dir_flag_overrides_existing(self, tmp_path):
+        self._existing_config(tmp_path, "/home/user/old-kb")
+        installer.install_all(base_dir="/home/user/new-kb")
+        data = json.loads((_opencode_dir(tmp_path) / "opencode.json").read_text(encoding="utf-8"))
+        assert data["mcp"]["memory-curator"]["env"]["CURATOR_BASE_DIR"] == "/home/user/new-kb"
+
+    def test_fresh_install_gets_default(self, tmp_path):
+        _opencode_dir(tmp_path)
+        installer.install_all()
+        data = json.loads((_opencode_dir(tmp_path) / "opencode.json").read_text(encoding="utf-8"))
+        assert data["mcp"]["memory-curator"]["env"]["CURATOR_BASE_DIR"].endswith("memory-curator")
+
+
+class TestSkillSymlinkDest:
+    """Симлинк в скиллах (ранняя ручная установка) не должен ронять
+    установку: rmtree на symlink падает — replace на unlink."""
+
+    def test_symlink_replaced_by_copy(self, tmp_path, monkeypatch):
+        _opencode_dir(tmp_path)
+        dest_root = tmp_path / ".config" / "opencode" / "skills"
+        dest_root.mkdir(parents=True)
+        link = dest_root / "curator-save"
+        link.symlink_to(_repo_root_for_test() / ".agents" / "skills" / "curator-save")
+
+        installer.install_all()
+
+        assert link.is_dir() and not link.is_symlink(), \
+            "после установки скилл — обычная копия, не симлинк"
+        assert (link / "SKILL.md").exists()
+
+
+def _repo_root_for_test():
+    from curator.installer import _repo_root
+    return _repo_root()
