@@ -94,5 +94,5 @@ repo: https://github.com/podlodka-ai-club/refinement
 |----------|----------------|--------|
 | Значимый цикл write → read и durability | Факты сохраняются в xmemory, переживают рестарты, query возвращает их | ✅ |
 | Схема под задачу | XMD-схема: Reference + Style + relations (links, contradicts) | ✅ |
-| xmemory как часть продукта | Primary backend, не отдельное демо сбоку | ✅ |
+| Два режима развёртывания | Локальная база — по умолчанию (офлайн); xmemory — для команд и облака. Write→read цикл и durability проверены в обоих | ✅ |
 | Наглядность результата | `curator_status` показывает рост фактов, `demo.py` показывает дельту: дубликаты отклонены обученным агентом | ✅ |
