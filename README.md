@@ -5,6 +5,8 @@ project: Memory Curator
 
 # Memory Curator
 
+> **Всё для проверки и защиты проекта → [PRESENTATION.md](PRESENTATION.md)**
+
 Фоновый агент памяти для opencode и Claude Code: извлекает проверенные знания
 из сессий и `.md`-документации, хранит их с валидацией, автономно улучшает
 память (дубликаты, устаревание, противоречия) и возвращает знания обратно
@@ -181,5 +183,6 @@ AGENTS.md / CLAUDE.md — база в контексте каждой сесси
 
 ## Ссылки
 
+- Защита проекта (пакет по правилам, как проверить): [PRESENTATION.md](PRESENTATION.md)
 - Репозиторий команды: https://github.com/podlodka-ai-club/refinement
 - xmemory: https://xmemory.ai
