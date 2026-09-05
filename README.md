@@ -106,8 +106,10 @@ cd core && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ```
 
 `./install.sh` — без вопросов: сам найдёт opencode / Claude Code, впишет
-MCP-сервер, команды `/curator-*`, скиллы и worker. Перезапусти харнес —
-готово. База — `~/memory-cursor` (см. `curator status`).
+MCP-сервер, команды `/curator-*`, скиллы, worker, правила памяти (глобальный
+AGENTS.md / CLAUDE.md — база в контексте каждой сессии) и плагин-реминдер
+`session.idle`. Перезапусти харнес — готово. База — `~/memory-curator`
+(см. `curator status`).
 
 `curator demo` прогоняет на изолированной tmp-базе весь жизненный цикл —
 **реальными вызовами** (те же функции, что в проде): кандидаты → gatekeeper

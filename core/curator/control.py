@@ -106,7 +106,7 @@ def cmd_status():
     except Exception as e:
         print(f"  Ошибка чтения фактов: {e}")
 
-    last_report = _last_report_time()
+    last_report = _last_report_summary()
     if last_report:
         print(f"\n  Последний improve: {last_report}")
 
@@ -489,13 +489,28 @@ def _is_today(ts: str) -> bool:
     return ts[:10] == datetime.now().isoformat()[:10]
 
 
-def _last_report_time():
+def _last_report_summary():
+    """Последний improve-отчёт: время + суть (что нашёл worker), не только дата."""
     if not REPORT_DIR.exists():
         return None
     reports = sorted(REPORT_DIR.glob("improve_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not reports:
         return None
-    return datetime.fromtimestamp(reports[0].stat().st_mtime).strftime("%d.%m.%Y %H:%M")
+    when = datetime.fromtimestamp(reports[0].stat().st_mtime).strftime("%d.%m.%Y %H:%M")
+    try:
+        stats = json.loads(reports[0].read_text(encoding="utf-8")).get("stats", {})
+    except (OSError, json.JSONDecodeError):
+        stats = {}
+    parts = []
+    for key, label in (("duplicates_found", "дубликатов"), ("stale_found", "устаревших"), ("contradictions_found", "противоречий")):
+        if key in stats:
+            parts.append(f"{label}: {stats[key]}")
+    if not parts:
+        return when
+    summary = f"{when} — " + ", ".join(parts)
+    if all(stats.get(k, 1) == 0 for k in ("duplicates_found", "stale_found", "contradictions_found")):
+        summary += " (база чистая)"
+    return summary
 
 
 def _human_interval(minutes: int) -> str:

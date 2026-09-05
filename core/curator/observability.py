@@ -8,6 +8,7 @@
 """
 
 import json
+import os
 import time
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
@@ -29,8 +30,10 @@ class ObserveEvent:
 
 
 class Observability:
-    def __init__(self, path: str = "~/.curator/improve_events.jsonl"):
-        self.path = Path(path).expanduser()
+    def __init__(self, path: str | None = None):
+        # Тесты и демо изолируют лог через CURATOR_OBS_PATH — инвариант:
+        # ничего, кроме прод-кода, не пишет в ~/.curator/ пользователя
+        self.path = Path(path or os.environ.get("CURATOR_OBS_PATH", "~/.curator/improve_events.jsonl")).expanduser()
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def log(self, event: ObserveEvent):
