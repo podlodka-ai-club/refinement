@@ -98,7 +98,7 @@ curator sync    # пуш outbox в xmemory
 ```bash
 .venv/bin/python -m pytest tests/ -q --ignore=tests/smoke
 ```
-«Надёжность: 290+ тестов, каждое требование хакатона закрыто тестом с ID».
+«Надёжность: 300+ тестов, каждое требование хакатона закрыто тестом с ID».
 Открыть `design/requirements.md` — матрица 6/6 + 5/5 + 4/4.
 
 ## Ответ на вопрос жюри про multi-user (выучить)
