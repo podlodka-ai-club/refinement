@@ -299,3 +299,53 @@ class TestJsoncTolerance:
         assert entry["type"] == "local" and entry["enabled"] is True
         assert entry["environment"]["CURATOR_BASE_DIR"] == "/home/user/kb"
         assert data["command"]["skill-creator"]["description"] == "d"
+
+
+class TestGlobalRules:
+    """Read-side без хуков: секция Memory Curator в глобальном файле правил
+    (AGENTS.md / CLAUDE.md) — база попадает в контекст каждой сессии."""
+
+    def test_opencode_rules_created(self, tmp_path):
+        _opencode_dir(tmp_path)
+        installer.install_all()
+        agents = tmp_path / ".config" / "opencode" / "AGENTS.md"
+        text = agents.read_text(encoding="utf-8")
+        assert "memory-curator:begin" in text
+        assert "/curator-save" in text
+
+    def test_rules_keep_foreign_content(self, tmp_path):
+        _opencode_dir(tmp_path)
+        agents = tmp_path / ".config" / "opencode" / "AGENTS.md"
+        agents.write_text("# Мои личные правила\n\nНе делать лишнего.\n", encoding="utf-8")
+
+        installer.install_all()
+
+        text = agents.read_text(encoding="utf-8")
+        assert "Мои личные правила" in text, "чужой контент не трогаем"
+        assert "memory-curator:begin" in text
+
+    def test_rules_idempotent(self, tmp_path):
+        _opencode_dir(tmp_path)
+        installer.install_all()
+        installer.install_all()
+        text = (tmp_path / ".config" / "opencode" / "AGENTS.md").read_text(encoding="utf-8")
+        assert text.count("memory-curator:begin") == 1, "повторный install не дублирует секцию"
+
+    def test_plugin_installed(self, tmp_path):
+        _opencode_dir(tmp_path)
+        installer.install_all()
+        plugin = tmp_path / ".config" / "opencode" / "plugins" / "curator-reminder.js"
+        assert plugin.exists()
+        assert "session.idle" in plugin.read_text(encoding="utf-8")
+
+    def test_claude_rules_in_claude_md(self, tmp_path, monkeypatch):
+        _claude_dir(tmp_path)
+        project = tmp_path / "proj"
+        project.mkdir()
+        monkeypatch.chdir(project)
+
+        installer.install_all(target="claude")
+
+        text = (tmp_path / ".claude" / "CLAUDE.md").read_text(encoding="utf-8")
+        assert "memory-curator:begin" in text
+        assert "/curator-query" in text

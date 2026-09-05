@@ -22,8 +22,10 @@ class RetrievalFeedback:
     всегда свежие — с диска. Телеметрия: сбой записи не валит вызвавшую тулзу.
     """
 
-    def __init__(self, storage_path: str = "~/.curator/usage.json"):
-        self.storage_path = Path(storage_path).expanduser()
+    def __init__(self, storage_path: str | None = None):
+        # Тесты и демо изолируют телеметрию через CURATOR_USAGE_PATH —
+        # инвариант: ничего, кроме прод-кода, не пишет в ~/.curator/ пользователя
+        self.storage_path = Path(storage_path or os.environ.get("CURATOR_USAGE_PATH", "~/.curator/usage.json")).expanduser()
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock_path = self.storage_path.with_suffix(self.storage_path.suffix + ".lock")
 
